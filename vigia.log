@@ -1,0 +1,44 @@
+[11/09/2026 17:02:32] Vigiando o WhatsApp de: Emporio Print Arte (a cada 20s). Feche a janela para parar.
+[11/09/2026 17:02:32] Nenhuma sessao do WhatsApp conectada no OpenWA. Tento de novo depois.
+[11/09/2026 17:03:49] Vigiando o WhatsApp de: Emporio Print Arte (a cada 20s). Feche a janela para parar.
+[11/09/2026 17:04:34] Vigiando o WhatsApp de: Emporio Print Arte (a cada 20s). Feche a janela para parar.
+[11/09/2026 17:04:34] Primeira execucao: vou baixar o que chegou nas ultimas 12 horas.
+[11/09/2026 17:10:33] Vigiando o WhatsApp de: Emporio Print Arte, TESTE WHATSAPP (a cada 20s). Feche a janela para parar.
+[11/09/2026 17:10:33] Nenhuma sessao do WhatsApp conectada no OpenWA. Tento de novo depois.
+[11/09/2026 17:17:40] Vigiando o WhatsApp de: Emporio Print Arte, TESTE WHATSAPP (a cada 20s). Feche a janela para parar.
+[11/09/2026 17:17:45] OpenWA fora do ar ou recusou a chave (<urlopen error [WinError 10061] Nenhuma conexão pôde ser feita porque a máquina de destino as recusou ativamente>). Tento de novo a cada checagem.
+[11/09/2026 17:18:07] Nenhuma sessao do WhatsApp conectada no OpenWA. Tento de novo a cada checagem.
+[11/09/2026 17:22:07] Conectado na sessao 'finart' (556281824589). Aguardando arquivos...
+[11/09/2026 17:28:43] AVISO: pasta do cliente nao existia, criando: \\servidor\TRABALHO\TESTE WHATSAPP
+[11/09/2026 17:29:17] Vigiando o WhatsApp de: Emporio PRINT, TESTE WHATSAPP (a cada 20s). Feche a janela para parar.
+[11/09/2026 17:29:17] Conectado na sessao 'finart' (556281824589). Aguardando arquivos...
+[11/09/2026 17:31:36] Vigiando o WhatsApp de: Emporio PRINT, TESTE WHATSAPP (a cada 20s). Feche a janela para parar.
+[11/09/2026 17:31:36] Conectado na sessao 'finart' (556281824589). Aguardando arquivos...
+[11/09/2026 17:31:38] ERRO ao consultar TESTE WHATSAPP: HTTP 429: {"statusCode":429,"message":"ThrottlerException: Too Many Requests"}
+[11/09/2026 17:32:18] Salvo: \\servidor\TRABALHO\TESTE WHATSAPP\SETEMBRO\11\adesivo rosa oval.pdf (1.2 MB)
+[11/09/2026 17:37:18] Nenhuma sessao do WhatsApp conectada no OpenWA. Tento de novo a cada checagem.
+[11/09/2026 17:37:22] Sessao 'finart' caiu (estado 'disconnected'). Religando...
+[11/09/2026 17:37:38] Conectado na sessao 'finart' (556281824589). Aguardando arquivos...
+[11/09/2026 17:38:48] Vigiando o WhatsApp de: Emporio PRINT, TESTE WHATSAPP (a cada 20s). Feche a janela para parar.
+[11/09/2026 17:38:48] Conectado na sessao 'finart' (556281824589). Aguardando arquivos...
+[11/09/2026 17:38:55] Ja existe um VIGIA rodando. Esta janela vai fechar para nao baixar arquivo repetido.
+[11/09/2026 17:44:36] Vigiando o WhatsApp de: Emporio PRINT, TESTE WHATSAPP (a cada 20s). Feche a janela para parar.
+[11/09/2026 17:44:36] Conectado na sessao 'finart' (556281824589). Aguardando arquivos...
+[11/09/2026 17:44:37] Salvo: \\servidor\TRABALHO\TESTE WHATSAPP\SETEMBRO\11\adesivo rosa oval_2.pdf (1.2 MB)
+[11/09/2026 17:45:17] Salvo: \\servidor\TRABALHO\TESTE WHATSAPP\SETEMBRO\11\adesivo rosa oval_3.pdf (1.2 MB)
+[11/09/2026 17:47:38] ERRO ao consultar VOPRIX: HTTP 429: {"statusCode":429,"message":"ThrottlerException: Too Many Requests"}
+[11/09/2026 17:47:58] ERRO ao consultar VOPRIX: HTTP 429: {"statusCode":429,"message":"ThrottlerException: Too Many Requests"}
+[11/09/2026 17:48:18] ERRO ao consultar VOPRIX: HTTP 429: {"statusCode":429,"message":"ThrottlerException: Too Many Requests"}
+[11/09/2026 17:48:38] ERRO ao consultar VOPRIX: HTTP 429: {"statusCode":429,"message":"ThrottlerException: Too Many Requests"}
+[11/09/2026 17:48:58] ERRO ao consultar VOPRIX: HTTP 429: {"statusCode":429,"message":"ThrottlerException: Too Many Requests"}
+[11/09/2026 17:49:19] ERRO ao consultar VOPRIX: HTTP 429: {"statusCode":429,"message":"ThrottlerException: Too Many Requests"}
+[11/09/2026 17:49:39] ERRO ao consultar VOPRIX: HTTP 429: {"statusCode":429,"message":"ThrottlerException: Too Many Requests"}
+[11/09/2026 17:49:59] ERRO ao consultar VOPRIX: HTTP 429: {"statusCode":429,"message":"ThrottlerException: Too Many Requests"}
+[11/09/2026 17:50:19] ERRO ao consultar VOPRIX: HTTP 429: {"statusCode":429,"message":"ThrottlerException: Too Many Requests"}
+[11/09/2026 17:50:39] ERRO ao consultar VOPRIX: HTTP 429: {"statusCode":429,"message":"ThrottlerException: Too Many Requests"}
+[11/09/2026 17:50:59] OpenWA fora do ar ou recusou a chave (HTTP 429: {"statusCode":429,"message":"ThrottlerException: Too Many Requests"}). Tento de novo a cada checagem.
+[11/09/2026 17:51:19] Conectado na sessao 'finart' (556281824589). Aguardando arquivos...
+[11/09/2026 17:52:57] Vigiando o WhatsApp de: Emporio Print Arte, Pedro Rafael (a cada 20s). Feche a janela para parar.
+[11/09/2026 17:52:57] Conectado na sessao 'finart' (556281824589). Aguardando arquivos...
+[11/09/2026 17:55:53] Conectado na sessao 'finart' (556281824589). Aguardando arquivos...
+[11/09/2026 17:56:07] AVISO: pasta do cliente nao existia, criando: \\servidor\TRABALHO\Pedro Rafael

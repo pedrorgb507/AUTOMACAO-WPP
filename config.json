@@ -1,0 +1,33 @@
+{
+  "_comentario": "VIGIA WHATSAPP - baixa os documentos que os clientes mandam no WhatsApp (via OpenWA) para a pasta do dia de cada cliente.",
+
+  "_comentario_openwa": "Endereco da API do OpenWA e arquivo com a API Key (lido sozinho).",
+  "openwa_url": "http://localhost:2785",
+  "arquivo_api_key": "C:\\Users\\Eudson\\OpenWA\\data\\.api-key",
+  "_comentario_sessao": "Nome da sessao no OpenWA. Deixe vazio para usar a sessao conectada.",
+  "sessao": "",
+
+  "_comentario_trabalho": "Pasta de rede onde ficam as pastas dos clientes (caminho UNC).",
+  "pasta_trabalho": "\\\\servidor\\TRABALHO",
+
+  "_comentario_clientes": "Um bloco por cliente. 'pasta' = nome da pasta do cliente dentro de pasta_trabalho (maiuscula/acento nao importam: reaproveita a pasta que ja existir). 'whatsapp' = numero com DDD.",
+  "clientes": [
+    { "pasta": "Emporio PRINT", "whatsapp": "62 9307-9801" },
+    { "pasta": "Pedro Rafael", "whatsapp": "62 98189-2397" },
+    { "pasta": "VOPRIX", "whatsapp": "62 8345-3135" }
+  ],
+
+  "_comentario_subpasta": "Fichas: {MES}=SETEMBRO  {mes}=09  {dia}=09  {ano}=2026  {data}=09-09-2026. A data usada e a do envio da mensagem.",
+  "subpasta_por_data": "{MES}\\{dia}",
+  "formato_pasta_dia": "%d-%m-%Y",
+  "mes_com_acento": true,
+
+  "_comentario_tipos": "Tipos de mensagem baixados. document = arquivo enviado como documento (PDF, CDR, ZIP...). Pode acrescentar: image, video, audio.",
+  "tipos": ["document"],
+  "_comentario_ext": "Extensoes aceitas. Deixe a lista vazia para aceitar qualquer documento.",
+  "extensoes_aceitas": [],
+
+  "_comentario_retroativo": "Na primeira vez que roda, baixa tambem o que chegou nas ultimas N horas.",
+  "horas_retroativas_primeira_vez": 12,
+  "segundos_entre_checagens": 20
+}
