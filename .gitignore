@@ -1,0 +1,8 @@
+# Cache do Python
+__pycache__/
+*.pyc
+
+# Estado de execucao do vigia: muda a cada arquivo baixado.
+# Versionar isso enche o historico de ruido e da conflito toda hora.
+vigia.log
+ja_baixados.json
