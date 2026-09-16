@@ -358,9 +358,16 @@ def ir_para_o_fim(pg):
                 ultima = agora
         pg.mouse.move(5, 5)          # tira a barra de hover da frente
         pg.wait_for_timeout(700)
+        # So avisa quando ha motivo de duvida. Dizer "cheguei no fim" a cada
+        # passada so enche o terminal: o que interessa e quando a conversa
+        # parece parada num ponto antigo, porque ai o robo nao veria os
+        # arquivos novos e ficaria calado sem nada de errado aparente.
         if ultima:
-            registrar("    fim da conversa: mensagem mais nova e de {}.".format(
-                dt.datetime.fromtimestamp(int(ultima) / 1000).strftime("%d/%m/%Y %H:%M")))
+            quando = dt.datetime.fromtimestamp(int(ultima) / 1000)
+            if (dt.datetime.now() - quando).days >= 3:
+                registrar("AVISO: a mensagem mais nova da conversa e de {} - a lista pode"
+                          " ter ficado parada num ponto antigo.".format(
+                              quando.strftime("%d/%m/%Y %H:%M")))
     except Exception as e:
         registrar("AVISO: nao consegui ir para o fim da conversa ({}).".format(str(e)[:70]))
 
