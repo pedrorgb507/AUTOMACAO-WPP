@@ -13,7 +13,9 @@ Funciona em cima do **OpenWA** (instalado em `C:\Users\Eudson\OpenWA`), que cone
 | Outras tarefas (testar, abrir painel) | **Ctrl+Shift+P** → `Tasks: Run Task` |
 | Parar | Clique na lixeira do terminal da tarefa, ou **Ctrl+C** nele |
 
-Os dois terminais (OpenWA e Vigia) abrem lado a lado no painel de baixo. Enquanto estiverem rodando, a automação funciona.
+O Ctrl+Shift+B abre um terminal para cada robô, lado a lado no painel de baixo:
+OpenWA, Vigia WhatsApp, **Vigia Sólida (Teams + CIP)** e Vigia Email. Enquanto
+estiverem rodando, a automação funciona.
 
 ## Arquivos
 
@@ -23,7 +25,7 @@ Os dois terminais (OpenWA e Vigia) abrem lado a lado no painel de baixo. Enquant
 | `vigia_whatsapp.py` | O programa que baixa os arquivos. |
 | `vigia.log` | Histórico: o que foi salvo e os erros. |
 | `ja_baixados.json` | Controle interno do que já foi baixado (não editar). |
-| `AUTOMACAO-WPP.code-workspace` | Abre o projeto no VS Code com as tarefas. **Sempre abra por ele** (ou pelo `ABRIR NO VS CODE.bat`). |
+| `AUTOMACAO-WPP.code-workspace` | Abre o projeto no VS Code com as tarefas. **Sempre abra por ele.** |
 | `iniciar-openwa.bat` | Liga o OpenWA. Clique duplo também funciona (abre janelas separadas). |
 | `VIGIAR.bat` / `TESTAR.bat` | Versões de clique duplo do vigia. |
 
@@ -48,63 +50,6 @@ No `config.json`, dentro de `"clientes"`, uma linha por número (vírgula entre 
 - Nome repetido na mesma pasta vira `_2`, `_3`.
 
 ---
-
-# VIGIA TEAMS
-
-Baixa o que os clientes postam no **canal do Teams** e salva na pasta do dia, do mesmo jeito que o do WhatsApp. Depois de salvar, marca a mensagem com ✅ no Teams.
-
-Canal vigiado: **SOLIDA GRAFICA**, da equipe Finart Digital.
-Destino: `\\servidor\TRABALHO\SOLIDA Grafica\<MÊS>\<dia>`
-
-Funciona mesmo com cliente convidado de conta pessoal (hotmail), porque o arquivo postado no canal fica no SharePoint da empresa.
-
-## Primeira vez (uma vez só)
-
-1. `INSTALAR-BIBLIOTECAS.bat` — instala `msal` e `requests`.
-2. Preencha `client_id` no `config_teams.json` (o ID do aplicativo registrado no portal da Microsoft).
-3. `TEAMS-LOGIN.bat` — mostra um código, você abre o site da Microsoft, cola o código e entra com a sua conta. O token fica salvo e se renova sozinho.
-4. `TEAMS-TESTAR.bat` — mostra o que ele baixaria, sem salvar nada e sem reagir.
-
-## No dia a dia
-
-| O que | Arquivo |
-|---|---|
-| Ficar vigiando o canal | `TEAMS-VIGIAR.bat` |
-| Ver o que baixaria, sem salvar | `TEAMS-TESTAR.bat` |
-| Refazer o login da Microsoft | `TEAMS-LOGIN.bat` |
-| Ver os IDs de outras equipes e canais | `TEAMS-LISTAR.bat` |
-
-## Arquivos
-
-| Arquivo | Para que serve |
-|---|---|
-| `config_teams.json` | Canal vigiado, pasta de destino, emoji da reação. |
-| `vigia_teams.py` | O programa. |
-| `pastas.py` | Regras de pasta do dia, usadas pelas automações. |
-| `vigia_teams.log` | Histórico do que foi salvo. |
-| `ja_baixados_teams.json` | Controle do que já foi baixado (não editar). |
-| `token_teams.bin` | Seu login salvo. **Não compartilhe este arquivo.** |
-
-## Regras
-
-- Só baixa o que **outra pessoa** postar; o que você mesmo mandar é ignorado.
-- Abre também as respostas das conversas dos últimos 3 dias.
-- Nome repetido na pasta vira `_2`, `_3`.
-- Na primeira execução, pega o que chegou nas últimas 12 horas.
-
-## Aviso no chat
-
-Depois de salvar e reagir com ✅, o vigia manda no chat **Sólida Gráfica** (externo) a mensagem
-"Arquivo recebido e em produção:" com cada arquivo salvo **anexado** e um link que abre sem login.
-
-Como funciona: o arquivo sobe para o OneDrive da conta arte@ (pasta "Microsoft Teams Chat Files",
-em partes se passar de 4 MB), recebe permissão de leitura para os e-mails de `emails_chat_aviso`
-e ganha um link "qualquer pessoa com o link". Se o anexo falhar, vai só o link.
-
-- Configuração no `config_teams.json`: `avisar_no_chat`, `chat_aviso_id`, `mensagem_aviso`, `emails_chat_aviso`, `link_publico_no_chat`.
-- Para desligar: `"avisar_no_chat": false`.
-- Se o aviso falhar, só aparece um AVISO no log: o arquivo continua salvo e não é baixado de novo.
-- Usa as permissões **ChatMessage.Send** e **Files.ReadWrite.All**. Na primeira vez depois da atualização, rode `TEAMS-LOGIN.bat` e aceite a nova permissão.
 
 # VIGIA TEAMS WEB
 
@@ -218,10 +163,34 @@ some se o envio falhar.
 Se um envio falhar no meio, o anexo fica pendurado na caixa e iria junto do
 próximo; por isso a caixa é limpa antes de anexar.
 
+## Aviso no grupo do WhatsApp
+
+Depois de baixar e marcar, o robô procura no grupo a mensagem em que a Sólida
+anunciou aquela OS (`49941 - FPF Tech - pasta`) e põe ✅ nela, para o pessoal
+ver de relance o que entrou em produção. É o `marcar_no_grupo.py`.
+
+O anúncio às vezes chega **depois** do arquivo. Por isso o arquivo nunca
+espera: é baixado na hora e a OS fica pendente em `pendencias_os.json`,
+tentada de novo a cada passada. Passado o prazo do config, vira aviso no log.
+
+Depende do **OpenWA estar rodando**. Sem ele o robô não para: registra o aviso
+no log e a OS continua na fila.
+
+## Um navegador para os dois robôs
+
+O perfil do Chrome (`perfil_teams_web/`) aceita **um dono só**. Se o vigia que
+baixa e o que manda os `.ppf` abrirem cada um o seu, o segundo não sobe. Por
+isso os dois rodam no mesmo processo — `vigiar_teams_e_cip.py` — e pedem a
+janela à mesma `SessaoNavegador`.
+
+Consequência prática: **se o robô for morto sem fechar direito, o Chrome dele
+continua rodando e tranca o perfil.** O próximo start falha até você fechar
+essas janelas (ou encerrar `chrome.exe` no Gerenciador de Tarefas). O erro diz
+isso quando acontece.
+
 ## Falta fazer
 
-1. Apagar o Teams antigo: `vigia_teams.py`, `config_teams.json`,
-   `token_teams.bin`, `graph_anexo.py`, `reenviar_aviso.py` — **só depois** do
-   robô rodar estável
-2. Religar `marcar_no_grupo.py` (hoje é disparado pelo vigia antigo)
-3. Terminal próprio no Ctrl+Shift+B
+Nada pendente da lista antiga. O Teams corporativo foi removido: `vigia_teams.py`,
+`config_teams.json`, `token_teams.bin`, `graph_anexo.py` e `reenviar_aviso.py`
+saíram, junto dos `.bat` deles. Estão no git (commit `3bede1b`) e há cópia dos
+não versionados em `copias-de-seguranca/`.

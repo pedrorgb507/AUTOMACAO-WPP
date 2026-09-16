@@ -7,18 +7,15 @@ __pycache__/
 vigia.log
 ja_baixados.json
 
-# Segredos: senha de app do Gmail e tokens da Microsoft.
+# Segredos: senha de app do Gmail e token da Microsoft.
 # Commitar isso vazaria a credencial no historico do git, onde ela fica
 # para sempre mesmo se o arquivo for apagado depois.
 config_email.json
-token_teams.bin
 token_cip.bin
 
 # Estado e log dos outros vigias, mesmo motivo do vigia.log
-vigia_teams.log
 vigia_cip.log
 vigia_email.log
-ja_baixados_teams.json
 ja_baixados_email.json
 pendencias_os.json
 
@@ -39,3 +36,7 @@ config.json
 config_cip.json
 config_teams.json
 copias-de-seguranca/
+
+# O config do robo do Teams Web tambem nomeia cliente e grupo.
+# Use o config_teams_web.EXEMPLO.json como molde.
+config_teams_web.json

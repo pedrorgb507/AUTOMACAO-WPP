@@ -35,9 +35,6 @@ import sys
 import time
 import urllib.parse
 
-import shutil
-import tempfile
-
 import pastas
 import teams_web as tw
 
@@ -165,66 +162,6 @@ def arquivo_estavel(caminho, segundos):
 # envio
 # ----------------------------------------------------------------------
 
-class SessaoNavegador(object):
-    """Mantem UMA janela de navegador para a passada inteira.
-
-    Abrir o navegador custa dezenas de segundos. Abrir um por arquivo deixaria
-    a passada lenta a ponto de atrasar o CTP, entao abre-se na primeira vez que
-    alguma pasta precisar e reaproveita-se ate o fim da passada.
-    """
-
-    def __init__(self):
-        self._pw = None
-        self._ctx = None
-        self._pg = None
-        self._conversa_aberta = None
-
-    def pagina(self):
-        if self._pg is not None:
-            return self._pg
-        from playwright.sync_api import sync_playwright
-        self._pw = sync_playwright().start()
-        self._ctx = tw.abrir(self._pw, visivel=False)
-        self._pg = self._ctx.pages[0] if self._ctx.pages else self._ctx.new_page()
-        self._pg.goto(tw.TEAMS, timeout=120000)
-        self._pg.wait_for_timeout(18000)
-        if not tw.esta_logado(self._pg):
-            raise RuntimeError("a sessao do Teams caiu - rode TEAMS-WEB-LOGIN.bat")
-        return self._pg
-
-    def enviar(self, conversa, caminho, nome, texto):
-        """Manda o arquivo na conversa, com o nome ja limpo."""
-        pg = self.pagina()
-        if self._conversa_aberta != conversa:
-            if not tw.abrir_conversa(pg, conversa):
-                raise RuntimeError("nao consegui abrir a conversa '{}'".format(conversa))
-            self._conversa_aberta = conversa
-
-        # O arquivo vai para o Teams com o nome que o navegador ler do disco,
-        # entao renomear so na variavel nao bastaria: manda-se uma copia com o
-        # nome certo, numa pasta temporaria que some no fim.
-        temporaria = tempfile.mkdtemp(prefix="cip-")
-        try:
-            copia = os.path.join(temporaria, nome)
-            shutil.copy2(caminho, copia)
-            if not tw.enviar_arquivo(pg, copia, texto or None):
-                # nao sei em que estado a caixa ficou; forca reabrir a conversa
-                self._conversa_aberta = None
-                raise RuntimeError("o envio de '{}' nao se confirmou".format(nome))
-        finally:
-            shutil.rmtree(temporaria, ignore_errors=True)
-
-    def fechar(self):
-        for fechar in (getattr(self._ctx, "close", None), getattr(self._pw, "stop", None)):
-            try:
-                if fechar:
-                    fechar()
-            except Exception:
-                pass
-        self._pw = self._ctx = self._pg = None
-        self._conversa_aberta = None
-
-
 def mandar_no_whatsapp(entrada, caminho, nome):
     """Manda o arquivo como documento no WhatsApp, pelo OpenWA.
 
@@ -266,7 +203,7 @@ def reenviar(cfg, nomes):
         registrar("ERRO: nenhuma pasta com destino 'teams' no config_cip.json.")
         return 0
 
-    sessao = SessaoNavegador()
+    sessao = tw.SessaoNavegador()
     feitos = 0
     try:
         for nome in nomes:
@@ -395,12 +332,19 @@ def processar_pasta(cfg, entrada, sessao, modo_teste):
     return feitos
 
 
-def uma_passada(cfg, modo_teste=False):
+def uma_passada(cfg, modo_teste=False, sessao=None):
+    """Envia o que estiver nas pastas. Devolve quantos sairam.
+
+    'sessao' emprestada: quando quem chama ja tem uma janela de navegador
+    aberta, usa-se a dela e NAO se fecha no fim - fechar a janela de outro
+    derrubaria o trabalho dele. Sem emprestimo, abre a sua e fecha.
+    """
     total = 0
-    # Uma janela de navegador para a passada inteira. So abre se alguma pasta
-    # com destino 'teams' tiver arquivo para mandar - quem so usa WhatsApp
-    # nunca paga o custo de abrir.
-    sessao = SessaoNavegador()
+    minha = sessao is None
+    # So abre navegador se alguma pasta precisar: quem so manda por WhatsApp
+    # nunca paga o custo de abrir o Chrome.
+    if minha:
+        sessao = tw.SessaoNavegador(visivel=bool(cfg.get("mostrar_navegador", False)))
     try:
         for entrada in cfg["pastas"]:
             try:
@@ -408,7 +352,8 @@ def uma_passada(cfg, modo_teste=False):
             except Exception as e:
                 registrar("ERRO na pasta '{}': {}".format(rotulo(entrada), e))
     finally:
-        sessao.fechar()
+        if minha:
+            sessao.fechar()
     return total
 
 

@@ -1,0 +1,22 @@
+{
+  "_comentario": "MOLDE do config do robo do Teams Web. Copie para config_teams_web.json e troque os campos de exemplo. O arquivo de verdade nao vai para o git: o repositorio e publico e ele nomeia cliente, pasta e grupo.",
+  "conversa": "Nome da conversa como aparece no Teams",
+  "nome_cliente": "NOME DO CLIENTE",
+  "_comentario_pasta": "Mesma pasta e mesmo padrao de subpasta que o vigia antigo usava.",
+  "pasta_base": "\\servidor\\TRABALHO\\NOME DO CLIENTE",
+  "subpasta_por_data": "{MES}\\{dia}",
+  "formato_pasta_dia": "%d-%m-%Y",
+  "mes_com_acento": true,
+  "_comentario_visto": "reagir_ao_baixar: marca a mensagem do cliente com o visto depois de salvar o arquivo. So o visto e suportado - e o unico emoji que o Teams oferece na barra rapida desta conta.",
+  "reagir_ao_baixar": true,
+  "_comentario_navegador": "mostrar_navegador: true abre a janela na tela (util para ver o que ele faz).",
+  "mostrar_navegador": false,
+  "_comentario_idade": "dias_para_tras: ignora mensagem mais velha que isso. Protege contra a conversa abrir parada num ponto antigo e o robo baixar arquivo velho para a pasta de hoje.",
+  "dias_para_tras": 3,
+  "segundos_entre_checagens": 60,
+  "_comentario_grupo": "Depois de baixar, o robo marca no grupo do WhatsApp a mensagem da OS correspondente, para o pessoal ver de relance o que entrou em producao. A Solida as vezes anuncia a OS DEPOIS de mandar o arquivo: a OS fica pendente e e tentada de novo a cada passada, virando aviso no log passados os minutos abaixo.",
+  "marcar_no_grupo_whatsapp": true,
+  "nome_do_grupo_whatsapp": "Nome do grupo no WhatsApp",
+  "minutos_para_avisar_pendencia": 5,
+  "horas_para_desistir_da_os": 24
+}

@@ -1,66 +1,89 @@
 # -*- coding: utf-8 -*-
-"""Sobe o vigia do Teams e o do CIP no mesmo terminal.
+"""Sobe o vigia do Teams e o do CIP num processo so, dividindo UM navegador.
 
-Os dois atendem a Solida e falam com o mesmo chat externo, entao ficam num
-terminal so em vez de ocupar duas abas. Cada linha sai marcada com a origem
-([TEAMS] ou [CIP]); o log completo de cada um continua no seu proprio arquivo,
-vigia_teams.log e vigia_cip.log.
+Os dois atendem a Solida pela mesma conta: um baixa o que ela manda e marca a
+mensagem, o outro devolve os .ppf do CTP. Antes eram dois processos separados;
+hoje nao podem ser, porque o perfil do Chrome (perfil_teams_web) nao aceita
+dois donos ao mesmo tempo - o segundo a subir simplesmente nao abre.
 
-Fechar a janela derruba os dois.
+Entao aqui abre-se uma janela e empresta-se aos dois, em ordem, a cada rodada.
+A pagina e recarregada a cada volta: reaproveitar a mesma por horas fez o
+clique no anexo parar de abrir a aba do OneDrive, e o robo via o arquivo sem
+baixar. Recarregar custa poucos segundos; reabrir o Chrome custa dezenas.
+
+Fechar a janela do terminal derruba os dois.
+
+Uso:
+    python vigiar_teams_e_cip.py
 """
 
-import os
-import subprocess
+import datetime as dt
 import sys
-import threading
+import time
 
-AQUI = os.path.dirname(os.path.abspath(__file__))
-VIGIAS = [("TEAMS", "vigia_teams.py"), ("CIP", "vigia_cip.py")]
+import teams_web as tw
+import vigia_cip as cip
 
 
-def repassar(rotulo, processo):
-    """Copia a saida do filho para este terminal, marcando de quem veio."""
-    for linha in processo.stdout:
-        sys.stdout.write("[{}] {}".format(rotulo, linha))
-        sys.stdout.flush()
+def registrar(msg):
+    linha = "[{}] [GERAL] {}".format(dt.datetime.now().strftime("%d/%m/%Y %H:%M:%S"), msg)
+    try:
+        print(linha, flush=True)
+    except UnicodeEncodeError:
+        print(linha.encode("ascii", "replace").decode(), flush=True)
+
+
+def uma_rodada(cfg_web, cfg_cip, sessao, primeira):
+    """Baixa o que chegou e manda o que esta na fila, na mesma janela."""
+    if primeira:
+        sessao.pagina()
+    else:
+        sessao.recarregar()
+    tw.passada_na_pagina(cfg_web, sessao.contexto(), sessao.pagina())
+    cip.uma_passada(cfg_cip, sessao=sessao)
 
 
 def main():
-    # PYTHONUNBUFFERED para a saida aparecer na hora, sem ficar presa no buffer
-    ambiente = dict(os.environ, PYTHONIOENCODING="utf-8", PYTHONUNBUFFERED="1")
-    processos = []
+    cfg_web = tw.ler_config()
+    cfg_cip = cip.ler_config()
+    intervalo = int(cfg_web.get("segundos_entre_checagens", 60))
+    registrar("Vigiando a Solida (baixar + devolver .ppf) a cada {}s.".format(intervalo))
+    registrar("Feche esta janela para parar os dois.")
 
-    for rotulo, script in VIGIAS:
-        p = subprocess.Popen(
-            [sys.executable, os.path.join(AQUI, script), "--vigiar"],
-            cwd=AQUI, env=ambiente,
-            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-            text=True, encoding="utf-8", errors="replace", bufsize=1)
-        processos.append((rotulo, p))
-        threading.Thread(target=repassar, args=(rotulo, p), daemon=True).start()
-        print("[{}] iniciado (PID {}).".format(rotulo, p.pid), flush=True)
-
+    sessao = tw.SessaoNavegador(visivel=bool(cfg_web.get("mostrar_navegador", False)))
+    primeira = True
     try:
-        # espera qualquer um dos dois morrer; se um cair, derruba o outro junto
-        # para nao ficar meio sistema rodando sem ninguem perceber
         while True:
-            caiu = [(r, p) for r, p in processos if p.poll() is not None]
-            if caiu:
-                rotulo, p = caiu[0]
-                print("[{}] ENCERROU (codigo {}). Derrubando o outro.".format(
-                    rotulo, p.returncode), flush=True)
-                break
             try:
-                processos[0][1].wait(timeout=2)
-            except subprocess.TimeoutExpired:
+                uma_rodada(cfg_web, cfg_cip, sessao, primeira)
+                primeira = False
+            except KeyboardInterrupt:
+                registrar("Encerrado pelo usuario.")
+                return
+            except Exception as e:
+                registrar("ERRO inesperado: {}".format(str(e)[:150]))
+                # a janela pode ter morrido junto: joga fora e abre outra
+                sessao.fechar()
+                primeira = True
+            try:
+                time.sleep(intervalo)
+            except KeyboardInterrupt:
+                registrar("Encerrado pelo usuario.")
+                return
+            # reler os configs deixa mudar pasta, cliente e intervalo sem
+            # derrubar o vigia
+            try:
+                cfg_web = tw.ler_config()
+                cfg_cip = cip.ler_config()
+                intervalo = int(cfg_web.get("segundos_entre_checagens", 60))
+            except (SystemExit, ValueError, OSError):
                 pass
-    except KeyboardInterrupt:
-        print("Encerrado pelo usuario.", flush=True)
     finally:
-        for rotulo, p in processos:
-            if p.poll() is None:
-                p.terminate()
+        sessao.fechar()
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        sys.exit(0)

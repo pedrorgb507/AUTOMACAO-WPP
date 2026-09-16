@@ -9,7 +9,7 @@
       "dependsOn": [
         "OpenWA",
         "Vigia WhatsApp",
-        "Vigia Teams + CIP",
+        "Vigia Solida (Teams + CIP)",
         "Vigia Email"
       ],
       "dependsOrder": "parallel",
@@ -67,8 +67,8 @@
       }
     },
     {
-      "label": "Vigia Teams + CIP",
-      "detail": "Baixa o que a Solida posta no canal e manda os PPF do CIP. Os dois no mesmo terminal.",
+      "label": "Vigia Solida (Teams + CIP)",
+      "detail": "Baixa o que a Solida manda, marca a mensagem e devolve os .ppf do CIP. Um processo so, porque os dois dividem a mesma janela de navegador.",
       "type": "process",
       "command": "python",
       "args": [
@@ -153,11 +153,11 @@
     },
     {
       "label": "Teams: testar (sem salvar nada)",
-      "detail": "Mostra o que seria baixado do canal, sem salvar nem reagir.",
+      "detail": "Mostra o que seria baixado da conversa, sem salvar nem marcar.",
       "type": "process",
       "command": "python",
       "args": [
-        "vigia_teams.py",
+        "teams_web.py",
         "--teste"
       ],
       "options": {
@@ -174,12 +174,12 @@
       }
     },
     {
-      "label": "Teams: refazer login da Microsoft",
-      "detail": "Abre o navegador para entrar de novo na conta da empresa.",
+      "label": "Teams: refazer login",
+      "detail": "Abre o navegador do robo para entrar de novo na conta pessoal (FINART CTP).",
       "type": "process",
       "command": "python",
       "args": [
-        "vigia_teams.py",
+        "teams_web.py",
         "--login"
       ],
       "options": {

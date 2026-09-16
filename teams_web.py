@@ -22,6 +22,7 @@ import os
 import sys
 import time
 
+import marcar_no_grupo
 import pastas
 
 try:
@@ -704,6 +705,102 @@ def enviar_arquivo(pg, caminho, texto=None):
         return False
 
 
+class SessaoNavegador(object):
+    """Uma janela de navegador emprestada para varios trabalhos.
+
+    Existe porque o perfil do Chrome (perfil_teams_web) nao aceita dois donos
+    ao mesmo tempo: se o vigia que baixa e o que manda os .ppf abrirem cada um
+    o seu, o segundo nao sobe. Entao os dois pedem a janela a esta classe.
+
+    Abrir o Chrome custa dezenas de segundos; carregar a pagina custa poucos.
+    Por isso 'recarregar' e barato e 'fechar' e caro - reaproveitar a mesma
+    pagina por horas, porem, fez o clique no anexo parar de funcionar, entao o
+    certo e recarregar a cada rodada e fechar so no fim.
+    """
+
+    def __init__(self, visivel=False):
+        self.visivel = visivel
+        self._pw = None
+        self._ctx = None
+        self._pg = None
+        self._conversa_aberta = None
+
+    def pagina(self):
+        if self._pg is not None:
+            return self._pg
+        from playwright.sync_api import sync_playwright
+        self._pw = sync_playwright().start()
+        try:
+            self._ctx = abrir(self._pw, visivel=self.visivel)
+        except Exception as e:
+            # O perfil do Chrome aceita um dono so. Se o robo foi morto sem
+            # fechar direito, o Chrome dele continua rodando e tranca o perfil
+            # - e a mensagem crua do Playwright nao diz isso.
+            self.fechar()
+            raise RuntimeError(
+                "nao consegui abrir o navegador do robo ({}). Provavelmente o Chrome "
+                "dele ficou aberto de uma execucao anterior e esta segurando o perfil: "
+                "feche as janelas do Chrome do robo (ou encerre chrome.exe no Gerenciador "
+                "de Tarefas) e tente de novo.".format(str(e).splitlines()[0][:90]))
+        self._pg = self._ctx.pages[0] if self._ctx.pages else self._ctx.new_page()
+        self._pg.goto(TEAMS, timeout=120000)
+        if not esperar_carregar(self._pg):
+            raise RuntimeError("a sessao do Teams caiu - rode TEAMS-WEB-LOGIN.bat")
+        return self._pg
+
+    def contexto(self):
+        self.pagina()
+        return self._ctx
+
+    def recarregar(self):
+        """Volta a pagina ao estado limpo, sem fechar o navegador."""
+        pg = self.pagina()
+        pg.goto(TEAMS, timeout=120000)
+        self._conversa_aberta = None
+        return esperar_carregar(pg)
+
+    def abrir_conversa(self, conversa):
+        """Abre a conversa uma vez so; repetir o pedido nao clica de novo."""
+        if self._conversa_aberta == conversa:
+            return True
+        if not abrir_conversa(self.pagina(), conversa):
+            return False
+        self._conversa_aberta = conversa
+        return True
+
+    def enviar(self, conversa, caminho, nome, texto):
+        """Manda o arquivo na conversa, com o nome ja limpo.
+
+        O arquivo vai para o Teams com o nome que o navegador ler do disco,
+        entao renomear so na variavel nao bastaria: manda-se uma copia com o
+        nome certo, numa pasta temporaria que some no fim.
+        """
+        import shutil
+        import tempfile
+        if not self.abrir_conversa(conversa):
+            raise RuntimeError("nao consegui abrir a conversa '{}'".format(conversa))
+        temporaria = tempfile.mkdtemp(prefix="envio-")
+        try:
+            copia = os.path.join(temporaria, nome)
+            shutil.copy2(caminho, copia)
+            if not enviar_arquivo(self.pagina(), copia, texto or None):
+                # nao sei em que estado a caixa ficou; forca reabrir a conversa
+                self._conversa_aberta = None
+                raise RuntimeError("o envio de '{}' nao se confirmou".format(nome))
+        finally:
+            shutil.rmtree(temporaria, ignore_errors=True)
+
+    def fechar(self):
+        for encerrar in (getattr(self._ctx, "close", None), getattr(self._pw, "stop", None)):
+            try:
+                if encerrar:
+                    encerrar()
+            except Exception:
+                pass
+        self._pw = self._ctx = self._pg = None
+        self._conversa_aberta = None
+
+
 def uma_passada(cfg, modo_teste=False):
     """Uma passada avulsa: abre o navegador, faz o trabalho e fecha."""
     with sync_playwright() as p:
@@ -734,6 +831,7 @@ def passada_na_pagina(cfg, ctx, pg, modo_teste=False):
     reg = ler_registro()
     ja = set(reg["baixados"])
     salvos = 0
+    baixados_agora = []
     if not esperar_carregar(pg):
         registrar("SESSAO CAIU: o Teams pediu login de novo.")
         registrar("    Rode TEAMS-WEB-LOGIN.bat e entre na conta; ate la nada e baixado.")
@@ -778,6 +876,7 @@ def passada_na_pagina(cfg, ctx, pg, modo_teste=False):
             ja.add(marca)
             reg["baixados"].append(marca)
             gravar_registro(reg)
+            baixados_agora.append(nome)
             salvos += 1
             registrar("ARQUIVO SALVO  >>  CLIENTE: {}".format(cfg.get("nome_cliente") or cfg["conversa"]))
             registrar("    Arquivo: {} ({:.2f} MB)".format(
@@ -789,6 +888,15 @@ def passada_na_pagina(cfg, ctx, pg, modo_teste=False):
     if velhas:
         registrar("({} mensagem(ns) com mais de {} dia(s) ignoradas.)".format(
             velhas, dias))
+
+    if not modo_teste:
+        # Roda mesmo sem arquivo novo: a Solida as vezes anuncia a OS no grupo
+        # DEPOIS de mandar o arquivo, entao as OS que ficaram pendentes
+        # precisam ser tentadas de novo a cada passada.
+        try:
+            marcar_no_grupo.processar(cfg, baixados_agora, registrar)
+        except Exception as e:
+            registrar("AVISO: falhou ao marcar no grupo do WhatsApp ({}).".format(str(e)[:120]))
     return salvos
 
 
