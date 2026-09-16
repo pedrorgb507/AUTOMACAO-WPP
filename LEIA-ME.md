@@ -128,9 +128,12 @@ pasta vale como senha** — está no `.gitignore`.
 | O que | Como |
 |---|---|
 | Entrar na conta (uma vez) | `TEAMS-WEB-LOGIN.bat` |
-| Ver o que ele baixaria | `python teams_web.py --teste` |
-| Marcar o que já está tratado | `python teams_web.py --corte` |
-| Rodar continuamente | `python teams_web.py --vigiar` |
+| Ver o que ele baixaria | `TEAMS-WEB-TESTAR.bat` |
+| Marcar o que já está tratado | `TEAMS-WEB-CORTE.bat` |
+| Rodar continuamente | `TEAMS-WEB-VIGIAR.bat` |
+
+O `--vigiar` mantém o navegador aberto entre as checagens e recarrega só a
+página. Uma passada com download leva uns 30 segundos.
 
 ## A reação ✅ — o que é verdade
 
@@ -197,14 +200,28 @@ ele oferece o `2714_heavycheckmark`, que é outro emoji.
   de segurança para o caso de a rolagem falhar: sem ela, uma janela antiga faria
   o robô baixar arquivo velho para a pasta de hoje.
 
+## Enviar os .ppf (vigia_cip.py)
+
+O `vigia_cip.py` manda os `.ppf` por aqui, não mais pelo Graph. Some o upload
+para o OneDrive, a liberação de leitura para o cliente e o `token_cip.bin`.
+
+No `config_cip.json`, a entrada com `"destino": "teams"` usa **`conversa`** — o
+nome da conversa como aparece no Teams — no lugar de `chat_id`.
+
+**Enviar tem a mesma armadilha da reação:** ver o anexo subir na caixa não prova
+que a mensagem saiu. Dois `.ppf` já foram dados como enviados, arquivados em
+ENVIADOS, e não chegaram ao cliente. Por isso `enviar_arquivo()` só confirma
+depois que a mensagem aparece na conversa **com id do servidor** e **continua lá
+sete segundos depois** — o Teams desenha a mensagem antes de aceitá-la, e ela
+some se o envio falhar.
+
+Se um envio falhar no meio, o anexo fica pendurado na caixa e iria junto do
+próximo; por isso a caixa é limpa antes de anexar.
+
 ## Falta fazer
 
-1. Enviar os `.ppf` por aqui (seletores da caixa de texto/anexar/enviar ainda
-   não testados)
-2. Redirecionar `vigia_cip.py` (pasta Cip Solida) para este Teams, sem devolver
-   anexo
-3. Apagar o Teams antigo: `vigia_teams.py`, `config_teams.json`,
+1. Apagar o Teams antigo: `vigia_teams.py`, `config_teams.json`,
    `token_teams.bin`, `graph_anexo.py`, `reenviar_aviso.py` — **só depois** do
    robô rodar estável
-4. Religar `marcar_no_grupo.py` (hoje é disparado pelo vigia antigo)
-5. Terminal próprio no Ctrl+Shift+B
+2. Religar `marcar_no_grupo.py` (hoje é disparado pelo vigia antigo)
+3. Terminal próprio no Ctrl+Shift+B
