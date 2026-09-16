@@ -452,6 +452,17 @@ def anexos_recebidos(pg):
     }""", CLASSE_MINHA)
 
 
+def navegador_morreu(e):
+    """True quando o erro diz que a pagina/contexto/navegador fechou.
+
+    O Playwright responde isso em qualquer chamada depois que o Chrome morre.
+    Tratar como "erro neste arquivo" faz o robo seguir tentando os proximos
+    numa janela que nao existe mais, colecionando erros e sem baixar nada ate
+    alguem reiniciar. E caso de reabrir o navegador, nao de pular o arquivo.
+    """
+    return "has been closed" in str(e)
+
+
 def baixar_anexo(ctx, pg, mid, indice, pasta_destino):
     """Baixa um anexo: clicar abre o OneDrive em outra aba, e la tem o botao.
 
@@ -834,7 +845,15 @@ def uma_passada(cfg, modo_teste=False):
         try:
             pg = ctx.pages[0] if ctx.pages else ctx.new_page()
             pg.goto(TEAMS, timeout=120000)
-            return passada_na_pagina(cfg, ctx, pg, modo_teste)
+            try:
+                return passada_na_pagina(cfg, ctx, pg, modo_teste)
+            except Exception as e:
+                # numa passada avulsa nao ha o que reabrir: o navegador morre
+                # junto com ela. Registra e sai limpo, sem despejar traceback.
+                if navegador_morreu(e):
+                    registrar("O navegador caiu no meio. Rode de novo.")
+                    return 0
+                raise
         finally:
             try:
                 ctx.close()
@@ -891,6 +910,10 @@ def passada_na_pagina(cfg, ctx, pg, modo_teste=False):
                 destino = baixar_anexo(ctx, pg, mid, i, pasta)
             except Exception as e:
                 registrar("ERRO ao baixar '{}': {}".format(nome, str(e)[:110]))
+                if navegador_morreu(e):
+                    registrar("    O navegador caiu. Paro a passada para reabri-lo -"
+                              " insistir aqui so junta erro.")
+                    raise
                 continue
             if not destino:
                 continue
