@@ -19,7 +19,9 @@ import argparse
 import datetime as dt
 import json
 import os
+import shutil
 import sys
+import tempfile
 import time
 
 import marcar_no_grupo
@@ -477,10 +479,23 @@ def baixar_anexo(ctx, pg, mid, indice, pasta_destino):
         with aba.expect_download(timeout=180000) as info:
             botao.click(timeout=20000)
         baixado = info.value
-        nome = baixado.suggested_filename
-        destino = pastas.nome_livre(pasta_destino, pastas.nome_seguro(nome))
-        baixado.save_as(destino)
-        return destino
+        nome = pastas.nome_seguro(baixado.suggested_filename)
+
+        # Salvar PRIMEIRO no disco local, depois mexer na rede. A aba do
+        # OneDrive fecha sozinha assim que dispara o download, e o Playwright
+        # cancela o arquivo junto com ela. Perguntar ao \servidor qual nome
+        # esta livre leva segundos quando a rede engasga - tempo suficiente
+        # para a aba morrer e o save_as falhar com "context has been closed".
+        temporaria = tempfile.mkdtemp(prefix="baixa-")
+        try:
+            local = os.path.join(temporaria, nome)
+            baixado.save_as(local)
+            # a aba ja nao importa: o arquivo esta no disco
+            destino = pastas.nome_livre(pasta_destino, nome)
+            shutil.move(local, destino)
+            return destino
+        finally:
+            shutil.rmtree(temporaria, ignore_errors=True)
     finally:
         if aba:
             try:
@@ -763,16 +778,6 @@ class SessaoNavegador(object):
     def recarregar(self):
         """Volta a pagina ao estado limpo, sem fechar o navegador."""
         pg = self.pagina()
-        # Fecha as abas que sobraram. Baixar abre uma aba no OneDrive; quando o
-        # download estoura o tempo, a aba abre depois do desistimos e fica la
-        # sem dono. Acumuladas, o Chrome passa a demorar para abrir a proxima -
-        # e o download seguinte estoura tambem, alimentando o problema.
-        for outra in list(self._ctx.pages):
-            if outra is not pg:
-                try:
-                    outra.close()
-                except Exception:
-                    pass
         pg.goto(TEAMS, timeout=120000)
         self._conversa_aberta = None
         return esperar_carregar(pg)
@@ -793,8 +798,6 @@ class SessaoNavegador(object):
         entao renomear so na variavel nao bastaria: manda-se uma copia com o
         nome certo, numa pasta temporaria que some no fim.
         """
-        import shutil
-        import tempfile
         if not self.abrir_conversa(conversa):
             raise RuntimeError("nao consegui abrir a conversa '{}'".format(conversa))
         temporaria = tempfile.mkdtemp(prefix="envio-")
