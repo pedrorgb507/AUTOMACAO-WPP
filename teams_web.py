@@ -234,6 +234,14 @@ SEL_MENSAGEM = '[data-tid="chat-pane-message"]'
 SEL_ANEXO = '[data-tid^="file-chiclet-"]'
 SEL_REAGIR = '[data-tid="add-reaction-picker-entry-point-button"]'
 SEL_BAIXAR_ONEDRIVE = '[aria-label^="Baixar esse arquivo"]'
+SEL_TITULO = '[data-tid="chat-title"]'
+# A barra de envio troca de prefixo conforme o estado da caixa: com anexo
+# pendurado ela vira "newMessageCommands-", sem anexo e "sendMessageCommands-".
+# Casar pelo fim do nome pega os dois casos.
+SEL_ANEXAR = '[data-tid$="Commands-FilePicker"]'
+SEL_CAIXA_TEXTO = '[data-tid="ckeditor"]'
+SEL_ENVIAR = '[data-tid$="Commands-send"]'
+SEL_TIRAR_ANEXO = '[data-tid="file-chiclet-close"]'
 
 # Mensagem nossa tem esta classe; a do cliente nao. E o unico jeito confiavel
 # de nao baixar de volta os proprios PPF que acabamos de enviar.
@@ -266,19 +274,6 @@ def _sem_acento(t):
     import unicodedata
     t = unicodedata.normalize("NFKD", t or "")
     return "".join(c for c in t if not unicodedata.combining(c)).lower().strip()
-
-
-def quem_esta_na_tela(pg):
-    """Nomes de quem assina as mensagens da conversa aberta."""
-    try:
-        return pg.evaluate("""() => {
-            const nomes = new Set();
-            document.querySelectorAll('[data-tid="message-author-name"]').forEach(
-                e => nomes.add((e.textContent || '').trim()));
-            return [...nomes];
-        }""")
-    except Exception:
-        return []
 
 
 def ir_para_o_fim(pg):
@@ -318,43 +313,62 @@ def ir_para_o_fim(pg):
         registrar("AVISO: nao consegui ir para o fim da conversa ({}).".format(str(e)[:70]))
 
 
-def _e_o_cliente(autores, nome):
-    procurado = _sem_acento(nome)
-    return any(procurado in _sem_acento(a) or _sem_acento(a) in procurado
-               for a in autores if a)
+def titulo_da_conversa(pg):
+    """Nome da conversa aberta, lido do cabecalho. '' se nao der para ler.
+
+    Conferir por quem assina as mensagens nao basta: o NOSSO nome assina em
+    todas as conversas, entao um alvo chamado "FINART CTP" daria certo em
+    qualquer tela. O titulo e de quem a conversa e.
+    """
+    try:
+        cab = pg.locator(SEL_TITULO).first
+        if not cab.count():
+            return ""
+        return (cab.inner_text(timeout=5000) or "").strip()
+    except Exception:
+        return ""
 
 
 def abrir_conversa(pg, nome):
     """Abre a conversa pelo nome e CONFERE que entrou na certa. True se conseguiu.
 
     Esperar um tempo fixo depois do clique nao serve: o Teams reabre sozinho na
-    ultima conversa que esteve aberta, entao logo apos o clique a tela ainda
-    pode ser a anterior - e o robo trabalharia na conversa de outro contato.
-    Aqui se espera a conversa REALMENTE trocar, olhando quem assina as
-    mensagens, e desiste em vez de chutar.
+    ultima conversa que esteve aberta, e o clique nem sempre pega de primeira.
+    Sem conferir, o robo trabalha na conversa de outro contato - ja aconteceu.
     """
     alvos = pg.locator(SEL_CONVERSA, has_text=nome)
     if not alvos.count():
         registrar("ERRO: nao achei a conversa '{}' na lista.".format(nome))
         return False
-    alvos.first.click(timeout=20000)
 
-    limite = time.time() + 45
-    autores = []
-    while time.time() < limite:
-        pg.wait_for_timeout(2500)
-        autores = quem_esta_na_tela(pg)
-        if _e_o_cliente(autores, nome):
-            ir_para_o_fim(pg)
-            # ir para o fim carrega outras mensagens: confere de novo, porque
-            # nao adianta ter entrado certo e terminar em outro lugar.
-            if _e_o_cliente(quem_esta_na_tela(pg), nome):
-                return True
-            registrar("ERRO: a conversa mudou sozinha ao ir para o fim.")
-            return False
+    procurado = _sem_acento(nome)
+    titulo = ""
+    # Mais de uma conversa pode casar com o nome, porque o texto da previa da
+    # ultima mensagem tambem conta. Em vez de apostar na primeira, tenta cada
+    # uma e para quando o titulo da conversa aberta for o certo.
+    for n in range(min(alvos.count(), 5)):
+        try:
+            alvos.nth(n).click(timeout=20000)
+        except Exception as e:
+            registrar("AVISO: nao consegui clicar na conversa ({}).".format(str(e)[:70]))
+            continue
+        limite = time.time() + 20
+        while time.time() < limite:
+            pg.wait_for_timeout(2000)
+            titulo = titulo_da_conversa(pg)
+            if titulo and procurado in _sem_acento(titulo):
+                ir_para_o_fim(pg)
+                # rolar carrega outra parte da conversa: confere de novo, porque
+                # nao adianta entrar certo e terminar em outro lugar
+                fim = titulo_da_conversa(pg)
+                if procurado in _sem_acento(fim):
+                    return True
+                registrar("ERRO: a conversa mudou de '{}' para '{}' ao rolar.".format(
+                    titulo, fim))
+                return False
 
-    registrar("ERRO: cliquei em '{}' mas a conversa aberta e de: {}.".format(
-        nome, ", ".join(autores) or "(ninguem identificado)"))
+    registrar("ERRO: pedi a conversa '{}' e a aberta e '{}'.".format(
+        nome, titulo or "(sem titulo legivel)"))
     registrar("    {} conversa(s) na lista casam com esse nome.".format(alvos.count()))
     registrar("    Nao vou mexer numa conversa que nao e a do cliente.")
     return False
@@ -497,6 +511,83 @@ def reagir(pg, mid):
             except Exception:
                 pass
     return False
+
+
+def enviar_arquivo(pg, caminho, texto=None):
+    """Anexa um arquivo na conversa ABERTA e envia. True se saiu.
+
+    Quem chama e responsavel por ja estar na conversa certa (abrir_conversa
+    confere isso) - esta funcao nao tem como saber para quem esta mandando.
+
+    O anexo vai pelo campo de arquivo que o Teams cria ao acionar o anexador;
+    entregar o caminho ali evita a janela do Windows, que o robo nao consegue
+    operar. Enviar pelo navegador dispensa subir para o OneDrive e liberar
+    leitura para o cliente: a sessao logada ja resolve a permissao, igual a
+    quando a gente anexa na mao.
+    """
+    if not os.path.exists(caminho):
+        registrar("ERRO: nao existe o arquivo para enviar: {}".format(caminho))
+        return False
+    nome = os.path.basename(caminho)
+    try:
+        # Um envio que falhou no meio deixa o anexo pendurado na caixa, e ele
+        # iria junto do proximo - mandando para o cliente um arquivo que nao
+        # era para ir agora. Limpa antes de comecar.
+        sobrou = pg.locator(SEL_TIRAR_ANEXO)
+        if sobrou.count():
+            registrar("    (tirando {} anexo(s) que sobraram na caixa)".format(sobrou.count()))
+            for _ in range(10):
+                if not sobrou.count():
+                    break
+                sobrou.first.click(timeout=10000)
+                pg.wait_for_timeout(1200)
+
+        pg.locator(SEL_ANEXAR).first.click(timeout=15000)
+        pg.wait_for_timeout(2500)
+        campo = pg.locator('input[type="file"]').first
+        if not campo.count():
+            registrar("ERRO: o anexador abriu mas nao apareceu campo de arquivo.")
+            pg.keyboard.press("Escape")
+            return False
+        campo.set_input_files(caminho, timeout=60000)
+
+        # Espera o anexo terminar de subir: enviar antes disso manda mensagem
+        # vazia ou com o arquivo pela metade.
+        subiu = False
+        for _ in range(60):
+            pg.wait_for_timeout(2000)
+            if pg.locator('[data-tid^="file-chiclet-"]', has_text=nome).count():
+                subiu = True
+                break
+            if pg.locator('[data-tid="{}"]'.format("file-chiclet-" + nome)).count():
+                subiu = True
+                break
+        if not subiu:
+            registrar("AVISO: o anexo '{}' nao apareceu na caixa em 2 minutos.".format(nome))
+            return False
+
+        if texto:
+            caixa = pg.locator(SEL_CAIXA_TEXTO).first
+            if caixa.count():
+                caixa.click(timeout=10000)
+                caixa.type(texto, delay=12)
+                pg.wait_for_timeout(800)
+
+        enviar = pg.locator(SEL_ENVIAR).first
+        if not enviar.count():
+            registrar("ERRO: nao achei o botao de enviar.")
+            return False
+        enviar.click(timeout=15000)
+        pg.wait_for_timeout(4000)
+        registrar("    enviado: {}".format(nome))
+        return True
+    except Exception as e:
+        registrar("ERRO ao enviar '{}': {}".format(nome, str(e)[:110]))
+        try:
+            pg.keyboard.press("Escape")
+        except Exception:
+            pass
+        return False
 
 
 def uma_passada(cfg, modo_teste=False):
