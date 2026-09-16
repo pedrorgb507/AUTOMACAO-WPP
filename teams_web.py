@@ -763,6 +763,16 @@ class SessaoNavegador(object):
     def recarregar(self):
         """Volta a pagina ao estado limpo, sem fechar o navegador."""
         pg = self.pagina()
+        # Fecha as abas que sobraram. Baixar abre uma aba no OneDrive; quando o
+        # download estoura o tempo, a aba abre depois do desistimos e fica la
+        # sem dono. Acumuladas, o Chrome passa a demorar para abrir a proxima -
+        # e o download seguinte estoura tambem, alimentando o problema.
+        for outra in list(self._ctx.pages):
+            if outra is not pg:
+                try:
+                    outra.close()
+                except Exception:
+                    pass
         pg.goto(TEAMS, timeout=120000)
         self._conversa_aberta = None
         return esperar_carregar(pg)
