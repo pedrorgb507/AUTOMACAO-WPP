@@ -53,9 +53,11 @@ No `config.json`, dentro de `"clientes"`, uma linha por número (vírgula entre 
 
 # VIGIA TEAMS WEB
 
-Robô de navegador para o Teams de conta **pessoal** (FINART CTP,
-`registro_fotolito@hotmail.com`). Baixa o que a Sólida manda, salva na pasta do
-dia e marca a mensagem com o ✅.
+Robô de navegador para o Teams de conta **pessoal** (FINART CTP). Baixa o que a
+Sólida manda, salva na pasta do dia e marca a mensagem com o ✅.
+
+Qual conta exatamente, veja no próprio Teams do robô: clique na foto de perfil.
+Não fica escrito aqui porque o repositório é público.
 
 ## Por que existe
 
