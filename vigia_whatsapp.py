@@ -13,6 +13,7 @@ Uso:
 """
 
 import argparse
+import base64
 import datetime as dt
 import json
 import os
@@ -97,19 +98,29 @@ def respirar():
     _ULTIMA_CHAMADA["quando"] = time.time()
 
 
-def chamar(cfg, chave, caminho, params=None, binario=False, timeout=60, metodo="GET"):
+def chamar(cfg, chave, caminho, params=None, binario=False, timeout=60, metodo="GET", corpo=None):
     respirar()
     url = cfg.get("openwa_url", "http://localhost:2785").rstrip("/") + caminho
     if params:
         url += "?" + urllib.parse.urlencode(params)
-    req = urllib.request.Request(url, headers={"X-API-Key": chave, "Accept": "*/*"}, method=metodo)
+    cabecalhos = {"X-API-Key": chave, "Accept": "*/*"}
+    dados_envio = None
+    if corpo is not None:
+        dados_envio = json.dumps(corpo).encode("utf-8")
+        cabecalhos["Content-Type"] = "application/json"
+    req = urllib.request.Request(url, data=dados_envio, headers=cabecalhos, method=metodo)
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             dados = resp.read()
     except urllib.error.HTTPError as e:
-        corpo = e.read().decode("utf-8", "replace") if e.fp else ""
-        raise ErroApi(e.code, corpo)
-    return dados if binario else json.loads(dados.decode("utf-8"))
+        corpo_erro = e.read().decode("utf-8", "replace") if e.fp else ""
+        raise ErroApi(e.code, corpo_erro)
+    if binario:
+        return dados
+    # alguns POSTs respondem 200 com corpo vazio; json.loads morreria neles
+    if not dados.strip():
+        return {}
+    return json.loads(dados.decode("utf-8"))
 
 
 def listar_sessoes(cfg, chave):
@@ -133,7 +144,12 @@ def achar_sessao(cfg, chave):
 
 # Estados em que a sessao ja esta de pe ou subindo sozinha: mandar 'start' de
 # novo so atrapalharia.
-ESTADOS_DE_PE = ("ready", "initializing", "connecting", "authenticating", "qr")
+ESTADOS_DE_PE = ("ready", "initializing", "connecting", "authenticating", "qr", "qr_ready")
+
+# Estados em que o WhatsApp desvinculou o aparelho: a sessao so volta com
+# alguem lendo o QR no painel. Mandar 'start' aqui nao adianta - antes desta
+# lista existir, o vigia ficava pedindo start a cada minuto sem nunca resolver.
+ESTADOS_DE_QR = ("qr", "qr_ready")
 
 _ULTIMO_RELIGAR = {"quando": 0.0}
 
@@ -150,7 +166,13 @@ def religar_sessao(cfg, chave, minimo_entre_tentativas=60):
     if agora - _ULTIMO_RELIGAR["quando"] < minimo_entre_tentativas:
         return False
     for s in listar_sessoes(cfg, chave):
-        if str(s.get("status") or "").lower() in ESTADOS_DE_PE:
+        estado = str(s.get("status") or "").lower()
+        if estado in ESTADOS_DE_QR:
+            avisar_estado("WHATSAPP DESVINCULADO: a sessao '{}' esta esperando leitura do QR. "
+                          "Abra o painel do OpenWA e escaneie com o celular; ate la nada e baixado.".format(
+                              s.get("name")))
+            return False
+        if estado in ESTADOS_DE_PE:
             continue
         _ULTIMO_RELIGAR["quando"] = agora
         registrar("Sessao '{}' caiu (estado '{}'). Religando...".format(s.get("name"), s.get("status")))
@@ -215,8 +237,71 @@ def chat_ids_do_numero(cfg, chave, sessao_id, num):
     return ids
 
 
+def mensagens_do_chat(cfg, chave, sessao_id, chat_ids):
+    """Ultimas mensagens de um ou mais chats, sem repetir a mesma mensagem.
+
+    Numero e grupo chegam aqui do mesmo jeito: a unica diferenca entre os dois
+    e como se descobre o chat_id.
+    """
+    vistas = {}
+    for chat_id in chat_ids:
+        try:
+            resp = chamar(cfg, chave, "/api/sessions/{}/messages".format(urllib.parse.quote(sessao_id, safe="")),
+                          {"chatId": chat_id, "limit": 50, "inlineMedia": "false"})
+        except ErroApi as e:
+            if e.status in (400, 404):
+                continue
+            raise
+        for m in resp.get("messages", []) if isinstance(resp, dict) else []:
+            chave_msg = m.get("waMessageId") or m.get("id")
+            if chave_msg:
+                vistas[chave_msg] = m
+    return list(vistas.values())
+
+
+# Cache de nome de grupo -> id (...@g.us). Vive so enquanto o vigia esta rodando.
+_CACHE_GRUPO_ID = {}
+_GRUPO_JA_AVISADO = set()
+
+
+def chat_id_do_grupo(cfg, chave, sessao_id, nome):
+    """Id do chat de um grupo, procurado pelo nome que aparece no WhatsApp.
+
+    A API nao busca grupo por nome: e preciso listar todos e comparar. A
+    comparacao passa por normalizar() porque o nome digitado no config
+    dificilmente bate letra a letra com o assunto do grupo (maiuscula, acento,
+    espaco sobrando).
+    """
+    if nome in _CACHE_GRUPO_ID:
+        return _CACHE_GRUPO_ID[nome]
+    try:
+        grupos = chamar(cfg, chave, "/api/sessions/{}/groups".format(
+            urllib.parse.quote(sessao_id, safe="")))
+    except (ErroApi, OSError, ValueError) as e:
+        registrar("ERRO ao listar os grupos do WhatsApp: {}".format(e))
+        return None
+    if isinstance(grupos, dict):
+        grupos = grupos.get("groups") or grupos.get("data") or []
+    alvo = normalizar(nome)
+    for g in grupos:
+        if normalizar(str(g.get("name") or "")) == alvo:
+            _CACHE_GRUPO_ID[nome] = g.get("id")
+            return g.get("id")
+    # sem a lista de grupos visiveis, quem configurou nao tem como saber se
+    # errou o nome ou se o numero do robo nao esta dentro do grupo
+    if nome not in _GRUPO_JA_AVISADO:
+        _GRUPO_JA_AVISADO.add(nome)
+        registrar("AVISO: grupo '{}' nao encontrado. Grupos que enxergo: {}".format(
+            nome, ", ".join(sorted(str(g.get("name") or "?") for g in grupos)) or "(nenhum)"))
+    return None
+
+
 def mensagens_do_cliente(cfg, chave, sessao_id, cliente):
     """Ultimas mensagens recebidas do cliente (do banco do OpenWA)."""
+    grupo = (cliente.get("grupo") or "").strip()
+    if grupo:
+        chat_id = chat_id_do_grupo(cfg, chave, sessao_id, grupo)
+        return [] if not chat_id else mensagens_do_chat(cfg, chave, sessao_id, [chat_id])
     # As duas variantes do numero (com e sem o nono digito) quase sempre levam
     # ao MESMO chat, e o @c.us so serve quando a traducao falhou. Consultar tudo
     # gastaria 4 chamadas por cliente e estoura o limite de 10 por segundo da
@@ -233,20 +318,27 @@ def mensagens_do_cliente(cfg, chave, sessao_id, cliente):
     if traduzidos:
         alvos = traduzidos
 
-    vistas = {}
-    for chat_id in alvos:
-        try:
-            resp = chamar(cfg, chave, "/api/sessions/{}/messages".format(urllib.parse.quote(sessao_id, safe="")),
-                          {"chatId": chat_id, "limit": 50, "inlineMedia": "false"})
-        except ErroApi as e:
-            if e.status in (400, 404):
-                continue
-            raise
-        for m in resp.get("messages", []) if isinstance(resp, dict) else []:
-            chave_msg = m.get("waMessageId") or m.get("id")
-            if chave_msg:
-                vistas[chave_msg] = m
-    return list(vistas.values())
+    return mensagens_do_chat(cfg, chave, sessao_id, alvos)
+
+
+# Emoji que marca no WhatsApp a mensagem cujo arquivo ja foi baixado: o cliente
+# ve o visto na propria conversa e sabe que chegou. Trocavel pelo config.
+EMOJI_OK = "✅"
+
+
+def reagir(cfg, chave, sessao_id, chat_id, wid):
+    """Marca a mensagem com o visto de recebido.
+
+    Chamada so depois do arquivo estar salvo e registrado: a reacao e aviso ao
+    cliente, nao parte do download.
+    """
+    emoji = cfg.get("reacao_ao_baixar", EMOJI_OK)
+    if not emoji or not chat_id or not wid:
+        return
+    chamar(cfg, chave, "/api/sessions/{}/messages/react".format(
+        urllib.parse.quote(sessao_id, safe="")),
+        metodo="POST",
+        corpo={"chatId": chat_id, "messageId": wid, "emoji": emoji})
 
 
 # ----------------------------------------------------------------------
@@ -381,6 +473,45 @@ def gravar_registro(reg):
 # passada
 # ----------------------------------------------------------------------
 
+# Historico ao vivo ja buscado nesta passada, por chat. A busca e cara (baixa a
+# midia de varias mensagens de uma vez), entao uma por chat por passada basta
+# para atender todas as mensagens que falharam naquele chat.
+_HISTORICO_DA_PASSADA = {}
+
+
+def midia_pelo_historico(cfg, chave, sessao_id, msg, limite=8, timeout=240):
+    """Conteudo do anexo lido direto do WhatsApp, sem passar pelo banco do OpenWA.
+
+    O OpenWA nao guarda a midia de mensagem que chegou enquanto ele estava fora
+    do ar, e nao busca depois. Este endpoint le do proprio aparelho, que e o
+    unico jeito de recuperar esses arquivos. Devolve os bytes ou None.
+    """
+    chat_id = msg.get("chatId") or ""
+    if chat_id not in _HISTORICO_DA_PASSADA:
+        try:
+            resp = chamar(cfg, chave, "/api/sessions/{}/messages/{}/history".format(
+                urllib.parse.quote(sessao_id, safe=""), urllib.parse.quote(chat_id, safe="")),
+                {"limit": limite, "includeMedia": "true"}, timeout=timeout)
+            itens = resp.get("messages", resp) if isinstance(resp, dict) else resp
+            _HISTORICO_DA_PASSADA[chat_id] = itens or []
+        except (ErroApi, urllib.error.URLError, OSError, ValueError) as e:
+            registrar("AVISO: nao consegui ler o historico ao vivo de {} ({}).".format(chat_id, e))
+            _HISTORICO_DA_PASSADA[chat_id] = []
+
+    alvo = msg.get("waMessageId")
+    for m in _HISTORICO_DA_PASSADA[chat_id]:
+        if m.get("id") != alvo:
+            continue
+        bruto = (m.get("media") or {}).get("data") or (m.get("media") or {}).get("base64")
+        if not bruto:
+            return None
+        try:
+            return base64.b64decode(bruto)
+        except (ValueError, TypeError):
+            return None
+    return None
+
+
 def quando_da_mensagem(msg):
     ts = msg.get("timestamp")
     if isinstance(ts, (int, float)) and ts > 0:
@@ -404,6 +535,26 @@ def interessa(cfg, msg):
         if ext not in aceitas:
             return False
     return True
+
+
+def mostrar_so_na_tela(texto):
+    """Linha decorativa: aparece na janela, mas nao enche o arquivo de log."""
+    try:
+        print(texto, flush=True)
+    except UnicodeEncodeError:
+        print(texto.encode("ascii", "replace").decode(), flush=True)
+
+
+def anunciar_salvo(cliente, destino, tamanho, quem=None):
+    """Deixa bem visivel na tela de qual cliente era o arquivo que acabou de ser salvo."""
+    barra = "=" * 64
+    mostrar_so_na_tela(barra)
+    registrar("ARQUIVO SALVO  >>  CLIENTE: {}".format(cliente))
+    registrar("    Arquivo: {} ({:.1f} MB)".format(os.path.basename(destino), tamanho / 1048576))
+    if quem:
+        registrar("    Enviado por: {}".format(quem))
+    registrar("    Pasta: {}".format(os.path.dirname(destino)))
+    mostrar_so_na_tela(barra)
 
 
 ULTIMO_ESTADO = {"valor": None}
@@ -448,6 +599,7 @@ def uma_passada(cfg, modo_teste=False):
     desde = dt.datetime.fromtimestamp(reg.get("desde", 0))
 
     salvos = 0
+    _HISTORICO_DA_PASSADA.clear()
     for cliente in cfg["clientes"]:
         try:
             msgs = mensagens_do_cliente(cfg, chave, sessao["id"], cliente)
@@ -474,17 +626,31 @@ def uma_passada(cfg, modo_teste=False):
                     urllib.parse.quote(msg.get("chatId") or "", safe=""),
                     urllib.parse.quote(wid, safe="")), binario=True, timeout=300)
             except ErroApi as e:
-                if e.status == 404:
-                    registrar("AVISO: '{}' de {} nao tem o arquivo guardado no OpenWA "
-                              "(maior que o limite ou ainda baixando). Baixe pelo celular.".format(nome, cliente["pasta"]))
-                    # tenta de novo nas proximas passadas por ate 10 minutos; depois desiste
-                    if (dt.datetime.now() - quando).total_seconds() > 600:
-                        ja.add(wid)
-                        reg["baixados"].append(wid)
-                        gravar_registro(reg)
-                else:
+                if e.status != 404:
                     registrar("ERRO ao baixar '{}': {}".format(nome, e))
-                continue
+                    continue
+                # O OpenWA nao tem a midia. Antes de desistir, tenta ler direto
+                # do aparelho: e assim que se recupera o que chegou enquanto ele
+                # estava fora do ar.
+                dados = midia_pelo_historico(cfg, chave, sessao["id"], msg)
+                if not dados:
+                    velha = (dt.datetime.now() - quando).total_seconds() > 600
+                    if not velha:
+                        registrar("AVISO: '{}' de {} ainda nao tem o arquivo no OpenWA; tento de novo.".format(
+                            nome, cliente["pasta"]))
+                        continue
+                    # desistir marcando como baixado esconderia a perda; entao o
+                    # aviso final tem que ser inconfundivel
+                    registrar("ARQUIVO PERDIDO  >>  CLIENTE: {}".format(cliente["pasta"]))
+                    registrar("    Arquivo: {}".format(nome))
+                    registrar("    Chegou em {} e o OpenWA nunca guardou o conteudo.".format(
+                        quando.strftime("%d/%m %H:%M")))
+                    registrar("    BAIXE ESTE A MAO pelo WhatsApp; nao vou tentar de novo.")
+                    ja.add(wid)
+                    reg["baixados"].append(wid)
+                    gravar_registro(reg)
+                    continue
+                registrar("    ('{}' recuperado pelo historico ao vivo.)".format(nome))
             except (urllib.error.URLError, OSError) as e:
                 registrar("ERRO ao baixar '{}': {}".format(nome, e))
                 continue
@@ -499,11 +665,18 @@ def uma_passada(cfg, modo_teste=False):
                 registrar("ERRO ao salvar '{}' de {}: {}".format(nome, cliente["pasta"], e))
                 continue
 
-            registrar("Salvo: {} ({:.1f} MB)".format(destino, len(dados) / 1048576))
+            anunciar_salvo(cliente["pasta"], destino, len(dados))
             ja.add(wid)
             reg["baixados"].append(wid)
             gravar_registro(reg)
             salvos += 1
+
+            try:
+                reagir(cfg, chave, sessao["id"], msg.get("chatId") or "", wid)
+            except (urllib.error.URLError, OSError, ErroApi) as e:
+                # o arquivo ja esta salvo e marcado como baixado; perder o visto
+                # nao pode fazer o arquivo ser baixado de novo na proxima passada
+                registrar("AVISO: '{}' foi salvo, mas nao consegui marcar o OK no WhatsApp: {}".format(nome, e))
     return salvos
 
 

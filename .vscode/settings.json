@@ -1,0 +1,11 @@
+{
+  "files.encoding": "utf8",
+  "files.exclude": {
+    "**/__pycache__": true,
+    "**/*.tmp": true
+  },
+  "json.schemaDownload.enable": false,
+  "task.allowAutomaticTasks": "on",
+  "terminal.integrated.confirmOnExit": "always",
+  "terminal.integrated.confirmOnKill": "always"
+}

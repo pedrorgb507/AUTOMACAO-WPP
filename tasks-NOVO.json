@@ -1,0 +1,175 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "▶ Iniciar tudo (OpenWA + WhatsApp + Teams)",
+      "runOptions": {
+        "runOn": "folderOpen"
+      },
+      "dependsOn": [
+        "OpenWA",
+        "Vigia WhatsApp",
+        "Vigia Teams"
+      ],
+      "dependsOrder": "parallel",
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "OpenWA",
+      "detail": "Liga o OpenWA (API + painel). Deixe rodando.",
+      "type": "process",
+      "command": "cmd.exe",
+      "args": [
+        "/d",
+        "/c",
+        "iniciar-openwa.bat",
+        "vscode"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": {
+        "group": "wpp",
+        "panel": "dedicated",
+        "reveal": "always",
+        "clear": true
+      }
+    },
+    {
+      "label": "Vigia WhatsApp",
+      "detail": "Baixa os documentos dos clientes para a pasta do dia.",
+      "type": "process",
+      "command": "python",
+      "args": [
+        "vigia_whatsapp.py",
+        "--vigiar"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "PYTHONIOENCODING": "utf-8"
+        }
+      },
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": {
+        "group": "wpp",
+        "panel": "dedicated",
+        "reveal": "always",
+        "clear": true
+      }
+    },
+    {
+      "label": "Vigia Teams",
+      "detail": "Baixa o que a Solida posta no canal do Teams e marca com o visto.",
+      "type": "process",
+      "command": "python",
+      "args": [
+        "vigia_teams.py",
+        "--vigiar"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "PYTHONIOENCODING": "utf-8"
+        }
+      },
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": {
+        "group": "wpp",
+        "panel": "dedicated",
+        "reveal": "always",
+        "clear": true
+      }
+    },
+    {
+      "label": "WhatsApp: testar (sem salvar nada)",
+      "detail": "Mostra o que seria baixado agora, sem salvar.",
+      "type": "process",
+      "command": "python",
+      "args": [
+        "vigia_whatsapp.py",
+        "--teste"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "PYTHONIOENCODING": "utf-8"
+        }
+      },
+      "problemMatcher": [],
+      "presentation": {
+        "panel": "shared",
+        "reveal": "always",
+        "clear": true
+      }
+    },
+    {
+      "label": "Abrir painel do OpenWA",
+      "type": "process",
+      "command": "cmd.exe",
+      "args": [
+        "/d",
+        "/c",
+        "start",
+        "",
+        "http://localhost:2886"
+      ],
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "never"
+      }
+    },
+    {
+      "label": "Teams: testar (sem salvar nada)",
+      "detail": "Mostra o que seria baixado do canal, sem salvar nem reagir.",
+      "type": "process",
+      "command": "python",
+      "args": [
+        "vigia_teams.py",
+        "--teste"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "PYTHONIOENCODING": "utf-8"
+        }
+      },
+      "problemMatcher": [],
+      "presentation": {
+        "panel": "shared",
+        "reveal": "always",
+        "clear": true
+      }
+    },
+    {
+      "label": "Teams: refazer login da Microsoft",
+      "detail": "Abre o navegador para entrar de novo na conta da empresa.",
+      "type": "process",
+      "command": "python",
+      "args": [
+        "vigia_teams.py",
+        "--login"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "PYTHONIOENCODING": "utf-8"
+        }
+      },
+      "problemMatcher": [],
+      "presentation": {
+        "panel": "shared",
+        "reveal": "always",
+        "clear": true
+      }
+    }
+  ]
+}

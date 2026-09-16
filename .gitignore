@@ -30,3 +30,12 @@ teams_web_tela.png
 # Estado do robo do Teams Web, mesmo motivo do ja_baixados.json
 ja_baixados_teams_web.json
 diag_reacao/
+
+# Configuracoes com dado de cliente (telefone, e-mail, ID de chat).
+# O repositorio e publico: versionar isso publica o dado do cliente, e o
+# historico do git guarda para sempre mesmo se o arquivo sair depois.
+# Copias ficam em copias-de-seguranca/, que nao vai para o git.
+config.json
+config_cip.json
+config_teams.json
+copias-de-seguranca/
