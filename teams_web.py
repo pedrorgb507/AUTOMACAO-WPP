@@ -104,6 +104,27 @@ def esta_logado(pg):
     return False
 
 
+def esperar_carregar(pg, segundos_max=40):
+    """Espera o Teams ficar pronto, em vez de dormir um tempo fixo.
+
+    Dormir 18 segundos custava isso em TODA passada, mesmo quando o app abria
+    em 4. Aqui se olha a tela: assim que ela e o Teams logado, segue.
+    """
+    limite = time.time() + segundos_max
+    while time.time() < limite:
+        # A casca do app aparece ANTES da barra lateral. Seguir so por ela
+        # fazia o robo dizer que nao achou a conversa, porque a lista ainda
+        # nem existia. So esta pronto quando ha conversa para clicar.
+        if esta_logado(pg):
+            try:
+                if pg.locator(SEL_CONVERSA).count():
+                    return True
+            except Exception:
+                pass
+        pg.wait_for_timeout(1000)
+    return False
+
+
 def login():
     registrar("Abrindo o navegador.")
     registrar("ENTRE NA CONTA na janela que abriu. Pode demorar o quanto precisar.")
@@ -180,26 +201,56 @@ def ler_config():
 
 
 def vigiar(cfg):
+    """Fica rodando, mantendo UMA janela de navegador aberta.
+
+    Reabrir o navegador a cada checagem custava mais tempo do que a checagem em
+    si. Aqui a janela e aberta uma vez; se ela morrer, a proxima volta do laco
+    abre outra.
+    """
     intervalo = int(cfg.get("segundos_entre_checagens", 60))
     registrar("Vigiando a conversa '{}' no Teams Web (a cada {}s). Feche a janela para parar.".format(
         cfg["conversa"], intervalo))
-    while True:
+    with sync_playwright() as p:
+        ctx = pg = None
         try:
-            uma_passada(cfg)
-        except KeyboardInterrupt:
-            registrar("Encerrado pelo usuario.")
-            return
-        except Exception as e:
-            registrar("ERRO inesperado: {}".format(str(e)[:150]))
-        try:
-            time.sleep(intervalo)
-        except KeyboardInterrupt:
-            registrar("Encerrado pelo usuario.")
-            return
-        try:
-            cfg = ler_config()
-        except (SystemExit, ValueError, OSError):
-            pass
+            while True:
+                try:
+                    if ctx is None:
+                        ctx = abrir(p, visivel=bool(cfg.get("mostrar_navegador", False)))
+                        pg = ctx.pages[0] if ctx.pages else ctx.new_page()
+                    # Recarrega a cada passada, mas NAO reabre o navegador: o
+                    # caro e abrir o Chrome, nao carregar a pagina. Reaproveitar
+                    # a mesma pagina por horas fez o clique no anexo parar de
+                    # abrir a aba do OneDrive - o arquivo era visto e nao baixava.
+                    pg.goto(TEAMS, timeout=120000)
+                    passada_na_pagina(cfg, ctx, pg)
+                except KeyboardInterrupt:
+                    registrar("Encerrado pelo usuario.")
+                    return
+                except Exception as e:
+                    registrar("ERRO inesperado: {}".format(str(e)[:150]))
+                    # a janela pode ter morrido junto: joga fora e abre outra
+                    try:
+                        if ctx:
+                            ctx.close()
+                    except Exception:
+                        pass
+                    ctx = pg = None
+                try:
+                    time.sleep(intervalo)
+                except KeyboardInterrupt:
+                    registrar("Encerrado pelo usuario.")
+                    return
+                try:
+                    cfg = ler_config()
+                except (SystemExit, ValueError, OSError):
+                    pass
+        finally:
+            try:
+                if ctx:
+                    ctx.close()
+            except Exception:
+                pass
 
 
 def main():
@@ -294,18 +345,18 @@ def ir_para_o_fim(pg):
         pg.mouse.move(900, 500)
         ultima, parado = None, 0
         for _ in range(30):
-            pg.mouse.wheel(0, 5000)
-            pg.wait_for_timeout(1100)
+            pg.mouse.wheel(0, 6000)
+            pg.wait_for_timeout(600)
             agora = pg.evaluate(JS_ULTIMA)
             if agora and agora == ultima:
                 parado += 1
-                if parado >= 3:      # tres rodadas sem mudar: chegou no fim
+                if parado >= 2:      # duas rodadas sem mudar: chegou no fim
                     break
             else:
                 parado = 0
                 ultima = agora
         pg.mouse.move(5, 5)          # tira a barra de hover da frente
-        pg.wait_for_timeout(1500)
+        pg.wait_for_timeout(700)
         if ultima:
             registrar("    fim da conversa: mensagem mais nova e de {}.".format(
                 dt.datetime.fromtimestamp(int(ultima) / 1000).strftime("%d/%m/%Y %H:%M")))
@@ -354,7 +405,7 @@ def abrir_conversa(pg, nome):
             continue
         limite = time.time() + 20
         while time.time() < limite:
-            pg.wait_for_timeout(2000)
+            pg.wait_for_timeout(700)
             titulo = titulo_da_conversa(pg)
             if titulo and procurado in _sem_acento(titulo):
                 ir_para_o_fim(pg)
@@ -401,8 +452,13 @@ def baixar_anexo(ctx, pg, mid, indice, pasta_destino):
     chiclet = msg.locator(SEL_ANEXO).nth(indice)
     aba = None
     try:
-        with ctx.expect_page(timeout=40000) as nova:
-            chiclet.click(timeout=15000)
+        # Rolar ate o anexo antes de clicar: a lista de mensagens e virtualizada
+        # e o clique num item que acabou de entrar na tela nao abre a aba do
+        # OneDrive - fica esperando um evento que nunca vem.
+        chiclet.scroll_into_view_if_needed(timeout=20000)
+        pg.wait_for_timeout(1500)
+        with ctx.expect_page(timeout=90000) as nova:
+            chiclet.click(timeout=20000)
         aba = nova.value
         aba.wait_for_load_state("domcontentloaded", timeout=60000)
         aba.wait_for_timeout(7000)
@@ -513,6 +569,30 @@ def reagir(pg, mid):
     return False
 
 
+def saiu_da_caixa(pg, nome):
+    """True quando o arquivo virou mensagem na conversa e a caixa esvaziou.
+
+    Duas condicoes porque uma so engana: a caixa vazia pode ser um anexo
+    descartado, e um anexo com esse nome pode ser de mensagem antiga.
+    """
+    try:
+        if pg.locator(SEL_TIRAR_ANEXO).count():
+            return False          # ainda pendurado na caixa: nao saiu
+        return bool(pg.evaluate("""(nome) => {
+            const m = [...document.querySelectorAll('[data-tid="chat-pane-message"]')];
+            // olha so o fim da conversa: a mensagem recem-enviada e a ultima.
+            // Exige data-mid porque o Teams desenha a mensagem ANTES de o
+            // servidor aceitar; enquanto esta so desenhada ela nao tem id, e
+            // some se o envio falhar.
+            return m.slice(-3).some(e =>
+                (e.className || '').toString().includes('ChatMyMessage') &&
+                /^[0-9]+$/.test(e.getAttribute('data-mid') || '') &&
+                !!e.querySelector('[data-tid="file-chiclet-' + nome + '"]'));
+        }""", nome))
+    except Exception:
+        return False
+
+
 def enviar_arquivo(pg, caminho, texto=None):
     """Anexa um arquivo na conversa ABERTA e envia. True se saiu.
 
@@ -573,14 +653,48 @@ def enviar_arquivo(pg, caminho, texto=None):
                 caixa.type(texto, delay=12)
                 pg.wait_for_timeout(800)
 
-        enviar = pg.locator(SEL_ENVIAR).first
-        if not enviar.count():
-            registrar("ERRO: nao achei o botao de enviar.")
-            return False
-        enviar.click(timeout=15000)
-        pg.wait_for_timeout(4000)
-        registrar("    enviado: {}".format(nome))
-        return True
+        # Clicar em enviar NAO prova que a mensagem saiu. Ja aconteceu de o
+        # clique nao pegar, o anexo ficar preso na caixa e o robo dizer que
+        # tinha enviado - com o arquivo ja arquivado em ENVIADOS, fora da fila.
+        # Por isso aqui se confere o resultado: a mensagem tem que aparecer na
+        # conversa E a caixa tem que ficar vazia.
+        for tentativa in (1, 2):
+            if tentativa == 1:
+                botao = pg.locator(SEL_ENVIAR).first
+                if botao.count():
+                    try:
+                        botao.click(timeout=15000)
+                    except Exception as e:
+                        registrar("    (o botao de enviar nao aceitou o clique: {})".format(
+                            str(e)[:60]))
+                else:
+                    registrar("    (nao achei o botao de enviar; vou pelo teclado)")
+                    continue
+            else:
+                # Ctrl+Enter e o atalho que o proprio Teams anuncia no botao.
+                # Serve de segunda via quando o clique nao pega.
+                caixa = pg.locator(SEL_CAIXA_TEXTO).first
+                if caixa.count():
+                    caixa.click(timeout=10000)
+                pg.keyboard.press("Control+Enter")
+
+            for _ in range(15):
+                pg.wait_for_timeout(2000)
+                if not saiu_da_caixa(pg, nome):
+                    continue
+                # Confirma que FICA. A mensagem aparece na tela antes de o
+                # servidor aceitar; se o envio falhar ela some segundos depois,
+                # e foi assim que um .ppf ficou dado como enviado sem ter ido.
+                pg.wait_for_timeout(7000)
+                if saiu_da_caixa(pg, nome):
+                    registrar("    enviado: {}".format(nome))
+                    return True
+                registrar("    (a mensagem apareceu e sumiu - o envio nao pegou)")
+                break
+
+        registrar("ERRO: '{}' nao saiu - a mensagem nao apareceu na conversa.".format(nome))
+        registrar("    O arquivo continua na fila; nao foi dado como enviado.")
+        return False
     except Exception as e:
         registrar("ERRO ao enviar '{}': {}".format(nome, str(e)[:110]))
         try:
@@ -591,10 +705,7 @@ def enviar_arquivo(pg, caminho, texto=None):
 
 
 def uma_passada(cfg, modo_teste=False):
-    """Baixa o que o cliente mandou de novo na conversa e marca com o visto."""
-    reg = ler_registro()
-    ja = set(reg["baixados"])
-    salvos = 0
+    """Uma passada avulsa: abre o navegador, faz o trabalho e fecha."""
     with sync_playwright() as p:
         try:
             ctx = abrir(p, visivel=bool(cfg.get("mostrar_navegador", False)))
@@ -605,67 +716,79 @@ def uma_passada(cfg, modo_teste=False):
         try:
             pg = ctx.pages[0] if ctx.pages else ctx.new_page()
             pg.goto(TEAMS, timeout=120000)
-            pg.wait_for_timeout(int(cfg.get("segundos_carregar", 18)) * 1000)
-            if not esta_logado(pg):
-                registrar("SESSAO CAIU: o Teams pediu login de novo.")
-                registrar("    Rode TEAMS-WEB-LOGIN.bat e entre na conta; ate la nada e baixado.")
-                return 0
-            if not abrir_conversa(pg, cfg["conversa"]):
-                return 0
-
-            # Rede de seguranca: a lista de mensagens e virtualizada e ja
-            # aconteceu de a conversa abrir parada semanas atras. Sem este
-            # limite, uma janela velha faria o robo baixar arquivo antigo -
-            # e pior, guardar tudo na pasta de HOJE.
-            dias = int(cfg.get("dias_para_tras", 3))
-            cedo_demais = dt.datetime.now() - dt.timedelta(days=dias)
-            velhas = 0
-
-            for item in anexos_recebidos(pg):
-                mid = item["mid"]
-                quando = dt.datetime.fromtimestamp(int(mid) / 1000)
-                if quando < cedo_demais:
-                    velhas += 1
-                    continue
-                for i, nome in enumerate(item["nomes"]):
-                    marca = "{}|{}".format(mid, nome)
-                    if marca in ja:
-                        continue
-                    if modo_teste:
-                        registrar("[TESTE] baixaria '{}' ({}, mensagem {})".format(
-                            nome, quando.strftime("%d/%m %H:%M"), mid))
-                        continue
-                    try:
-                        pasta = pastas.pasta_do_dia(cfg, quando, avisar=registrar)
-                    except OSError as e:
-                        registrar("ERRO: pasta de destino inacessivel ({}).".format(e))
-                        return salvos
-                    try:
-                        destino = baixar_anexo(ctx, pg, mid, i, pasta)
-                    except Exception as e:
-                        registrar("ERRO ao baixar '{}': {}".format(nome, str(e)[:110]))
-                        continue
-                    if not destino:
-                        continue
-                    ja.add(marca)
-                    reg["baixados"].append(marca)
-                    gravar_registro(reg)
-                    salvos += 1
-                    registrar("ARQUIVO SALVO  >>  CLIENTE: {}".format(cfg.get("nome_cliente") or cfg["conversa"]))
-                    registrar("    Arquivo: {} ({:.2f} MB)".format(
-                        os.path.basename(destino), os.path.getsize(destino) / 1048576))
-                    registrar("    Pasta: {}".format(os.path.dirname(destino)))
-                    if cfg.get("reagir_ao_baixar", True):
-                        registrar("    Visto na mensagem: {}".format(
-                            "ok" if reagir(pg, mid) else "falhou"))
-            if velhas:
-                registrar("({} mensagem(ns) com mais de {} dia(s) ignoradas.)".format(
-                    velhas, dias))
+            return passada_na_pagina(cfg, ctx, pg, modo_teste)
         finally:
             try:
                 ctx.close()
             except Exception:
                 pass
+
+
+def passada_na_pagina(cfg, ctx, pg, modo_teste=False):
+    """O trabalho em si, numa janela que ja esta aberta.
+
+    Separado de uma_passada para o --vigiar poder reaproveitar a mesma janela:
+    abrir o navegador custa dezenas de segundos, e pagar isso a cada checagem
+    fazia o robo demorar mais para reagir do que a pessoa demoraria na mao.
+    """
+    reg = ler_registro()
+    ja = set(reg["baixados"])
+    salvos = 0
+    if not esperar_carregar(pg):
+        registrar("SESSAO CAIU: o Teams pediu login de novo.")
+        registrar("    Rode TEAMS-WEB-LOGIN.bat e entre na conta; ate la nada e baixado.")
+        return 0
+    if not abrir_conversa(pg, cfg["conversa"]):
+        return 0
+
+    # Rede de seguranca: a lista de mensagens e virtualizada e ja
+    # aconteceu de a conversa abrir parada semanas atras. Sem este
+    # limite, uma janela velha faria o robo baixar arquivo antigo -
+    # e pior, guardar tudo na pasta de HOJE.
+    dias = int(cfg.get("dias_para_tras", 3))
+    cedo_demais = dt.datetime.now() - dt.timedelta(days=dias)
+    velhas = 0
+
+    for item in anexos_recebidos(pg):
+        mid = item["mid"]
+        quando = dt.datetime.fromtimestamp(int(mid) / 1000)
+        if quando < cedo_demais:
+            velhas += 1
+            continue
+        for i, nome in enumerate(item["nomes"]):
+            marca = "{}|{}".format(mid, nome)
+            if marca in ja:
+                continue
+            if modo_teste:
+                registrar("[TESTE] baixaria '{}' ({}, mensagem {})".format(
+                    nome, quando.strftime("%d/%m %H:%M"), mid))
+                continue
+            try:
+                pasta = pastas.pasta_do_dia(cfg, quando, avisar=registrar)
+            except OSError as e:
+                registrar("ERRO: pasta de destino inacessivel ({}).".format(e))
+                return salvos
+            try:
+                destino = baixar_anexo(ctx, pg, mid, i, pasta)
+            except Exception as e:
+                registrar("ERRO ao baixar '{}': {}".format(nome, str(e)[:110]))
+                continue
+            if not destino:
+                continue
+            ja.add(marca)
+            reg["baixados"].append(marca)
+            gravar_registro(reg)
+            salvos += 1
+            registrar("ARQUIVO SALVO  >>  CLIENTE: {}".format(cfg.get("nome_cliente") or cfg["conversa"]))
+            registrar("    Arquivo: {} ({:.2f} MB)".format(
+                os.path.basename(destino), os.path.getsize(destino) / 1048576))
+            registrar("    Pasta: {}".format(os.path.dirname(destino)))
+            if cfg.get("reagir_ao_baixar", True):
+                registrar("    Visto na mensagem: {}".format(
+                    "ok" if reagir(pg, mid) else "falhou"))
+    if velhas:
+        registrar("({} mensagem(ns) com mais de {} dia(s) ignoradas.)".format(
+            velhas, dias))
     return salvos
 
 
@@ -683,8 +806,7 @@ def semear_registro(cfg):
         try:
             pg = ctx.pages[0] if ctx.pages else ctx.new_page()
             pg.goto(TEAMS, timeout=120000)
-            pg.wait_for_timeout(18000)
-            if not esta_logado(pg) or not abrir_conversa(pg, cfg["conversa"]):
+            if not esperar_carregar(pg) or not abrir_conversa(pg, cfg["conversa"]):
                 return 0
             for item in anexos_recebidos(pg):
                 for nome in item["nomes"]:

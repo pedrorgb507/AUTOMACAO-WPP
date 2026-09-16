@@ -11,15 +11,17 @@ Fluxo de cada arquivo:
        no chat do Teams (sem liberar, o cliente cai em "Voce precisa de acesso")
     4. move para a subpasta ENVIADOS
 
-Usa cache de token proprio (token_cip.bin) porque precisa de Files.ReadWrite,
-escopo que o vigia_teams.py nao tem. Assim os dois logins ficam independentes
-e mexer aqui nao derruba o vigia do Teams que esta em producao.
+O envio para a Solida vai pelo navegador (teams_web.py), nao pelo Graph. O
+chat dela e de conta pessoal, e mandar por ali dispensa subir o arquivo para o
+OneDrive e liberar leitura para o cliente: a sessao logada resolve a permissao,
+igual a quando a gente anexa na mao. Quem manda por WhatsApp segue pelo OpenWA.
+
+O login do navegador e o mesmo do robo que baixa: TEAMS-WEB-LOGIN.bat.
 
 Uso:
     python vigia_cip.py            uma passada
     python vigia_cip.py --vigiar   fica rodando
     python vigia_cip.py --teste    mostra o que faria, sem enviar nem mover
-    python vigia_cip.py --login    forca novo login (primeira vez)
     python vigia_cip.py --reenviar "49888__.ppf" "49891__.ppf"
                                    manda de novo arquivos que ja estao em ENVIADOS
 """
@@ -33,33 +35,16 @@ import sys
 import time
 import urllib.parse
 
-try:
-    import msal
-    import requests
-except ImportError:
-    print("Faltam bibliotecas. Rode INSTALAR-BIBLIOTECAS.bat ou:")
-    print("    pip install msal requests")
-    sys.exit(1)
+import shutil
+import tempfile
 
-import graph_anexo
 import pastas
+import teams_web as tw
 
 
 AQUI = os.path.dirname(os.path.abspath(__file__))
 CONFIG = os.path.join(AQUI, "config_cip.json")
-CACHE_TOKEN = os.path.join(AQUI, "token_cip.bin")
 LOG = os.path.join(AQUI, "vigia_cip.log")
-
-GRAPH = "https://graph.microsoft.com/v1.0"
-
-# Files.ReadWrite e o que permite subir o arquivo para o OneDrive; sem ele o
-# Teams so aceitaria link, nao anexo.
-ESCOPOS = ["ChatMessage.Send", "Files.ReadWrite.All", "User.Read"]
-
-class ErroGraph(Exception):
-    def __init__(self, status, texto):
-        super().__init__("HTTP {}: {}".format(status, texto[:300]))
-        self.status = status
 
 
 def registrar(msg):
@@ -81,15 +66,15 @@ def ler_config():
         sys.exit(1)
     with open(CONFIG, "r", encoding="utf-8") as f:
         cfg = json.load(f)
-    for campo in ("client_id", "tenant_id"):
-        if not (cfg.get(campo) or "").strip():
-            registrar("ERRO: preencha '{}' no config_cip.json.".format(campo))
-            sys.exit(1)
     if not cfg.get("pastas"):
         registrar("ERRO: nenhuma pasta configurada em 'pastas' no config_cip.json.")
         sys.exit(1)
     for e in cfg["pastas"]:
-        for campo in ("pasta", "chat_id", "destino"):
+        # 'teams' identifica a conversa pelo nome que aparece no Teams, porque
+        # o robo clica nela como a gente faz; 'whatsapp' segue por chat_id.
+        obrigatorios = ("pasta", "destino", "conversa") if e.get("destino") == "teams" \
+            else ("pasta", "destino", "chat_id")
+        for campo in obrigatorios:
             if not (e.get(campo) or "").strip():
                 registrar("ERRO: falta '{}' na pasta '{}' do config_cip.json.".format(
                     campo, e.get("nome") or "?"))
@@ -103,65 +88,6 @@ def ler_config():
 
 def rotulo(entrada):
     return entrada.get("nome") or entrada.get("pasta")
-
-
-# ----------------------------------------------------------------------
-# login e API
-# ----------------------------------------------------------------------
-
-def obter_token(cfg, forcar_login=False):
-    cache = msal.SerializableTokenCache()
-    if os.path.exists(CACHE_TOKEN):
-        try:
-            cache.deserialize(open(CACHE_TOKEN, "r", encoding="utf-8").read())
-        except (OSError, ValueError):
-            pass
-    app = msal.PublicClientApplication(
-        cfg["client_id"],
-        authority="https://login.microsoftonline.com/{}".format(cfg["tenant_id"]),
-        token_cache=cache)
-
-    resultado = None
-    if not forcar_login:
-        contas = app.get_accounts()
-        if contas:
-            resultado = app.acquire_token_silent(ESCOPOS, account=contas[0])
-    if not resultado:
-        if cfg.get("modo_login") == "codigo":
-            fluxo = app.initiate_device_flow(scopes=ESCOPOS)
-            registrar(fluxo.get("message", "Abra o link e digite o codigo."))
-            resultado = app.acquire_token_by_device_flow(fluxo)
-        else:
-            resultado = app.acquire_token_interactive(scopes=ESCOPOS)
-
-    if not resultado or "access_token" not in resultado:
-        registrar("ERRO no login: {}".format((resultado or {}).get("error_description", "sem detalhe")))
-        return None
-    if cache.has_state_changed:
-        try:
-            with open(CACHE_TOKEN, "w", encoding="utf-8") as f:
-                f.write(cache.serialize())
-        except OSError:
-            pass
-    return resultado["access_token"]
-
-
-def graph(token, metodo, url, **kwargs):
-    if url.startswith("/"):
-        url = GRAPH + url
-    cabecalho = {"Authorization": "Bearer " + token}
-    cabecalho.update(kwargs.pop("headers", {}))
-    for _ in range(4):
-        r = requests.request(metodo, url, headers=cabecalho, timeout=300, **kwargs)
-        if r.status_code == 429 or r.status_code >= 500:
-            espera = int(r.headers.get("Retry-After", 5))
-            registrar("API ocupada ({}), esperando {}s.".format(r.status_code, espera))
-            time.sleep(espera)
-            continue
-        if r.status_code >= 400:
-            raise ErroGraph(r.status_code, r.text)
-        return r
-    raise ErroGraph(r.status_code, r.text)
 
 
 # ----------------------------------------------------------------------
@@ -239,31 +165,64 @@ def arquivo_estavel(caminho, segundos):
 # envio
 # ----------------------------------------------------------------------
 
-def subir_para_onedrive(token, caminho, nome):
-    """Sobe o arquivo e devolve o item do OneDrive."""
-    return graph_anexo.subir(graph, token, caminho, nome)
+class SessaoNavegador(object):
+    """Mantem UMA janela de navegador para a passada inteira.
 
+    Abrir o navegador custa dezenas de segundos. Abrir um por arquivo deixaria
+    a passada lenta a ponto de atrasar o CTP, entao abre-se na primeira vez que
+    alguma pasta precisar e reaproveita-se ate o fim da passada.
+    """
 
-def mandar_no_chat(token, entrada, item, nome):
-    """Libera o arquivo para o cliente e posta com ele anexado no chat do Teams."""
-    erros = (ErroGraph, requests.RequestException, KeyError, ValueError)
-    emails = entrada.get("emails_chat") or []
-    try:
-        graph_anexo.liberar_para(graph, token, item, emails)
-    except erros as e:
-        registrar("AVISO: nao consegui liberar '{}' para {} ({}).".format(nome, emails, e))
+    def __init__(self):
+        self._pw = None
+        self._ctx = None
+        self._pg = None
+        self._conversa_aberta = None
 
-    links_html = ""
-    if entrada.get("link_publico_no_chat", False):
+    def pagina(self):
+        if self._pg is not None:
+            return self._pg
+        from playwright.sync_api import sync_playwright
+        self._pw = sync_playwright().start()
+        self._ctx = tw.abrir(self._pw, visivel=False)
+        self._pg = self._ctx.pages[0] if self._ctx.pages else self._ctx.new_page()
+        self._pg.goto(tw.TEAMS, timeout=120000)
+        self._pg.wait_for_timeout(18000)
+        if not tw.esta_logado(self._pg):
+            raise RuntimeError("a sessao do Teams caiu - rode TEAMS-WEB-LOGIN.bat")
+        return self._pg
+
+    def enviar(self, conversa, caminho, nome, texto):
+        """Manda o arquivo na conversa, com o nome ja limpo."""
+        pg = self.pagina()
+        if self._conversa_aberta != conversa:
+            if not tw.abrir_conversa(pg, conversa):
+                raise RuntimeError("nao consegui abrir a conversa '{}'".format(conversa))
+            self._conversa_aberta = conversa
+
+        # O arquivo vai para o Teams com o nome que o navegador ler do disco,
+        # entao renomear so na variavel nao bastaria: manda-se uma copia com o
+        # nome certo, numa pasta temporaria que some no fim.
+        temporaria = tempfile.mkdtemp(prefix="cip-")
         try:
-            link = graph_anexo.link_publico(graph, token, item)
-            if link:
-                links_html = '<p><a href="{}">{}</a></p>'.format(link, nome)
-        except erros as e:
-            registrar("AVISO: nao consegui criar link publico de '{}' ({}).".format(nome, e))
+            copia = os.path.join(temporaria, nome)
+            shutil.copy2(caminho, copia)
+            if not tw.enviar_arquivo(pg, copia, texto or None):
+                # nao sei em que estado a caixa ficou; forca reabrir a conversa
+                self._conversa_aberta = None
+                raise RuntimeError("o envio de '{}' nao se confirmou".format(nome))
+        finally:
+            shutil.rmtree(temporaria, ignore_errors=True)
 
-    corpo = graph_anexo.corpo_com_anexos([(nome, item)], (entrada.get("mensagem") or "").strip(), links_html)
-    graph(token, "POST", "/chats/{}/messages".format(entrada["chat_id"]), json=corpo)
+    def fechar(self):
+        for fechar in (getattr(self._ctx, "close", None), getattr(self._pw, "stop", None)):
+            try:
+                if fechar:
+                    fechar()
+            except Exception:
+                pass
+        self._pw = self._ctx = self._pg = None
+        self._conversa_aberta = None
 
 
 def mandar_no_whatsapp(entrada, caminho, nome):
@@ -298,40 +257,39 @@ def mandar_no_whatsapp(entrada, caminho, nome):
 def reenviar(cfg, nomes):
     """Manda de novo arquivos que ja estao em ENVIADOS, sem mover nada.
 
-    Reaproveita o item que ja esta no OneDrive (nao duplica); so sobe de novo
-    se ele nao existir mais.
+    Procura cada nome nas pastas ENVIADOS das entradas que vao para o Teams.
+    Diferente da versao antiga, nao ha item guardado no OneDrive para
+    reaproveitar: o arquivo do disco e mandado de novo, e so.
     """
-    token = obter_token(cfg)
-    if not token:
-        return 0
-    # so as pastas que mandam para o Teams: reenviar no WhatsApp seria outro caminho
     entradas = [e for e in cfg["pastas"] if e["destino"] == "teams"]
+    if not entradas:
+        registrar("ERRO: nenhuma pasta com destino 'teams' no config_cip.json.")
+        return 0
+
+    sessao = SessaoNavegador()
     feitos = 0
-    for nome in nomes:
-        entrada, caminho = None, None
-        for e in entradas:
-            tentativa = os.path.join(e["pasta"], e.get("subpasta_enviados") or "ENVIADOS", nome)
-            if os.path.isfile(tentativa):
-                entrada, caminho = e, tentativa
-                break
-        if not entrada:
-            entrada = entradas[0] if entradas else None
-        if not entrada:
-            registrar("ERRO: nenhuma pasta com destino 'teams' no config.")
-            return feitos
-        try:
-            item = graph_anexo.item_existente(graph, token, nome)
-            if not item:
-                if not caminho:
-                    registrar("ERRO: '{}' nao esta no OneDrive nem em nenhuma pasta ENVIADOS.".format(nome))
-                    continue
-                item = subir_para_onedrive(token, caminho, nome)
-            mandar_no_chat(token, entrada, item, nome)
-        except (ErroGraph, requests.RequestException, OSError) as e:
-            registrar("ERRO ao reenviar '{}': {}".format(nome, e))
-            continue
-        registrar("REENVIADO  >>  {}".format(nome))
-        feitos += 1
+    try:
+        for nome in nomes:
+            entrada, caminho = None, None
+            for e in entradas:
+                tentativa = os.path.join(
+                    e["pasta"], e.get("subpasta_enviados") or "ENVIADOS", nome)
+                if os.path.isfile(tentativa):
+                    entrada, caminho = e, tentativa
+                    break
+            if not caminho:
+                registrar("ERRO: '{}' nao esta em nenhuma pasta ENVIADOS.".format(nome))
+                continue
+            try:
+                sessao.enviar(entrada["conversa"], caminho, nome,
+                              (entrada.get("mensagem") or "").strip())
+            except Exception as e:
+                registrar("ERRO ao reenviar '{}': {}".format(nome, e))
+                continue
+            registrar("REENVIADO  >>  {}  (para '{}')".format(nome, entrada["conversa"]))
+            feitos += 1
+    finally:
+        sessao.fechar()
     return feitos
 
 
@@ -368,8 +326,8 @@ def avisar_estado(chave, texto):
         registrar(texto)
 
 
-def processar_pasta(cfg, entrada, token_teams, modo_teste):
-    """Envia tudo que estiver na pasta dessa entrada. Devolve (feitos, token)."""
+def processar_pasta(cfg, entrada, sessao, modo_teste):
+    """Envia tudo que estiver na pasta dessa entrada. Devolve quantos sairam."""
     nome_pasta = rotulo(entrada)
 
     # 'ativo': false pausa a pasta sem apagar a configuracao. Avisa uma vez a
@@ -377,15 +335,15 @@ def processar_pasta(cfg, entrada, token_teams, modo_teste):
     if not entrada.get("ativo", True):
         avisar_estado(nome_pasta, "PAUSADO: '{}' nao esta enviando (ativo=false no config_cip.json).".format(
             nome_pasta))
-        return 0, token_teams
+        return 0
 
     arquivos = arquivos_da_pasta(entrada)
     if arquivos is None:
         avisar_estado(nome_pasta, "Pasta inacessivel: {}. Tento de novo.".format(entrada["pasta"]))
-        return 0, token_teams
+        return 0
     if not arquivos:
         avisar_estado(nome_pasta, "Vigiando {}. Aguardando arquivos...".format(entrada["pasta"]))
-        return 0, token_teams
+        return 0
 
     enviados_dir = os.path.join(entrada["pasta"], entrada.get("subpasta_enviados") or "ENVIADOS")
     espera = float(cfg.get("segundos_estabilidade", 5))
@@ -400,7 +358,8 @@ def processar_pasta(cfg, entrada, token_teams, modo_teste):
         if modo_teste:
             registrar("[TESTE] {} | {}".format(nome_pasta, nome))
             registrar("        iria como '{}' para o {} '{}', depois para ENVIADOS".format(
-                novo_nome, entrada["destino"], entrada.get("nome_do_chat") or entrada["chat_id"]))
+                novo_nome, entrada["destino"],
+                entrada.get("conversa") or entrada.get("nome_do_chat") or entrada.get("chat_id")))
             continue
 
         if not arquivo_estavel(caminho, espera):
@@ -409,12 +368,8 @@ def processar_pasta(cfg, entrada, token_teams, modo_teste):
 
         try:
             if entrada["destino"] == "teams":
-                if not token_teams:
-                    token_teams = obter_token(cfg)
-                    if not token_teams:
-                        return feitos, token_teams
-                item = subir_para_onedrive(token_teams, caminho, novo_nome)
-                mandar_no_chat(token_teams, entrada, item, novo_nome)
+                sessao.enviar(entrada["conversa"], caminho, novo_nome,
+                              (entrada.get("mensagem") or "").strip())
             else:
                 mandar_no_whatsapp(entrada, caminho, novo_nome)
         except Exception as e:
@@ -437,18 +392,23 @@ def processar_pasta(cfg, entrada, token_teams, modo_teste):
             registrar("    de: {}".format(nome))
         registrar("    arquivado em: {}".format(destino))
         feitos += 1
-    return feitos, token_teams
+    return feitos
 
 
 def uma_passada(cfg, modo_teste=False):
     total = 0
-    token = None  # so pede o login do Teams se alguma pasta precisar
-    for entrada in cfg["pastas"]:
-        try:
-            feitos, token = processar_pasta(cfg, entrada, token, modo_teste)
-            total += feitos
-        except Exception as e:
-            registrar("ERRO na pasta '{}': {}".format(rotulo(entrada), e))
+    # Uma janela de navegador para a passada inteira. So abre se alguma pasta
+    # com destino 'teams' tiver arquivo para mandar - quem so usa WhatsApp
+    # nunca paga o custo de abrir.
+    sessao = SessaoNavegador()
+    try:
+        for entrada in cfg["pastas"]:
+            try:
+                total += processar_pasta(cfg, entrada, sessao, modo_teste)
+            except Exception as e:
+                registrar("ERRO na pasta '{}': {}".format(rotulo(entrada), e))
+    finally:
+        sessao.fechar()
     return total
 
 
@@ -480,15 +440,11 @@ def main():
     p = argparse.ArgumentParser(description="Vigia a pasta do CTP e manda os .ppf no chat da Solida.")
     p.add_argument("--vigiar", action="store_true", help="fica rodando")
     p.add_argument("--teste", action="store_true", help="mostra o que faria, sem enviar nem mover")
-    p.add_argument("--login", action="store_true", help="forca um novo login")
     p.add_argument("--reenviar", nargs="+", metavar="ARQUIVO",
                    help="manda de novo arquivos que ja estao em ENVIADOS")
     args = p.parse_args()
 
     cfg = ler_config()
-    if args.login:
-        registrar("Login OK." if obter_token(cfg, forcar_login=True) else "Login falhou.")
-        return
     if args.reenviar:
         n = reenviar(cfg, args.reenviar)
         registrar("{} arquivo(s) reenviado(s).".format(n))
