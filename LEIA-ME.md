@@ -183,10 +183,17 @@ baixa e o que manda os `.ppf` abrirem cada um o seu, o segundo não sobe. Por
 isso os dois rodam no mesmo processo — `vigiar_teams_e_cip.py` — e pedem a
 janela à mesma `SessaoNavegador`.
 
-Consequência prática: **se o robô for morto sem fechar direito, o Chrome dele
-continua rodando e tranca o perfil.** O próximo start falha até você fechar
-essas janelas (ou encerrar `chrome.exe` no Gerenciador de Tarefas). O erro diz
-isso quando acontece.
+Duas consequências práticas:
+
+**Rode um de cada vez.** `TEAMS-WEB-VIGIAR.bat`, `CIP-VIGIAR.bat` e o Vigia
+Sólida do Ctrl+Shift+B disputam o mesmo perfil. O do Ctrl+Shift+B já faz os
+dois trabalhos; os `.bat` avulsos servem para rodar à mão quando ele está
+parado.
+
+**Se o robô for morto sem fechar direito, o Chrome dele continua rodando e
+tranca o perfil.** O próximo start falha até você fechar essas janelas (ou
+encerrar `chrome.exe` no Gerenciador de Tarefas). O erro diz isso quando
+acontece.
 
 ## Falta fazer
 

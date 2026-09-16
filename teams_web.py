@@ -738,10 +738,11 @@ class SessaoNavegador(object):
             # - e a mensagem crua do Playwright nao diz isso.
             self.fechar()
             raise RuntimeError(
-                "nao consegui abrir o navegador do robo ({}). Provavelmente o Chrome "
-                "dele ficou aberto de uma execucao anterior e esta segurando o perfil: "
-                "feche as janelas do Chrome do robo (ou encerre chrome.exe no Gerenciador "
-                "de Tarefas) e tente de novo.".format(str(e).splitlines()[0][:90]))
+                "nao consegui abrir o navegador do robo ({}). O perfil aceita um dono so, "
+                "entao ou ja ha outro robo rodando (o Vigia Solida, o TEAMS-WEB-VIGIAR ou "
+                "o CIP-VIGIAR - use um de cada vez), ou o Chrome de uma execucao anterior "
+                "ficou aberto segurando o perfil: feche-o pelo Gerenciador de Tarefas "
+                "(chrome.exe) e tente de novo.".format(str(e).splitlines()[0][:80]))
         self._pg = self._ctx.pages[0] if self._ctx.pages else self._ctx.new_page()
         self._pg.goto(TEAMS, timeout=120000)
         if not esperar_carregar(self._pg):
