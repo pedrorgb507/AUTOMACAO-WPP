@@ -224,18 +224,52 @@ para baixar": o robô marcava como tratado e seguia **em silêncio**. Arquivos d
 Viva se perderam assim, e ninguém notou porque não havia erro no log.
 
 Agora ele segue o link. Mas o link não é público — vem compartilhado com a nossa
-conta — então baixar exige estar logado. A senha de aplicativo do `config_email.json`
-**não serve**: ela vale para IMAP, não para o Drive. Por isso existe um navegador
-com sessão própria, igual ao do Teams:
+conta — então baixar exige estar autenticado.
 
-1. Rode o **`GMAIL-LOGIN.bat`** e entre na conta que recebe os e-mails.
-2. A sessão fica em `perfil_drive_web/` — **vale como senha**, está no `.gitignore`.
-
-Se a sessão cair, o robô avisa no log e **não marca o e-mail como tratado**, então
-ele tenta de novo na passada seguinte em vez de perder o arquivo.
+**Por que não dá para usar navegador aqui.** A senha de aplicativo do
+`config_email.json` não serve: ela vale para IMAP, não para o Drive. E entrar na
+conta por um navegador automatizado **o Google recusa**, com a mensagem *"Esse
+navegador ou app pode não ser seguro"* — foi testado em 17/09 e não tem
+contorno. Por isso o acesso é pela API oficial: o login acontece uma vez no seu
+navegador **normal**, e depois o robô renova o acesso sozinho, sem navegador.
 
 O `tamanho_maximo_drive_mb` (500) é maior que o limite de anexo de propósito:
 link do Drive existe justamente porque o arquivo é grande.
+
+## Ligar o Drive na primeira vez
+
+Uma vez só, em <https://console.cloud.google.com> logado na conta que recebe os
+e-mails:
+
+1. Crie um projeto (o nome não importa — por exemplo `Automacao Finart`).
+2. **APIs e serviços → Biblioteca** → procure **Google Drive API** → **Ativar**.
+3. **APIs e serviços → Tela de permissão OAuth** → tipo **Externo** → preencha
+   nome do app e e-mail de contato.
+4. Ainda na tela de permissão, em **Usuários de teste**, adicione o próprio
+   e-mail da conta. Sem isso o login é recusado.
+5. **APIs e serviços → Credenciais → Criar credenciais → ID do cliente OAuth**
+   → tipo **App para computador** → **Criar** → **Fazer download do JSON**.
+6. Salve o arquivo baixado nesta pasta com o nome exato
+   **`credenciais_drive.json`**.
+7. Rode o **`GMAIL-LOGIN.bat`**. Abre o seu navegador; escolha a conta e
+   autorize. Na tela *"O Google não verificou este app"*, clique em
+   **Avançado → Acessar (não seguro)** — o "app" é este robô, rodando no seu
+   PC.
+
+Pronto. O acesso fica em `token_drive.json`, que **vale como senha** e está no
+`.gitignore` junto com o `credenciais_drive.json`.
+
+### Importante: o modo "Teste" expira em 7 dias
+
+Enquanto a tela de permissão estiver com status **Teste**, o Google **invalida o
+acesso a cada 7 dias** e o `GMAIL-LOGIN.bat` precisa ser rodado de novo. Para
+não conviver com isso, volte na **Tela de permissão OAuth** e mude o status para
+**Em produção**. O aviso de "app não verificado" continua aparecendo no login —
+é esperado e não atrapalha.
+
+Se o acesso vencer, o robô **avisa no log e não marca o e-mail como tratado**:
+ele tenta de novo a cada passada, então nada se perde enquanto você não refaz o
+login.
 
 ## Se o registro sumir, ele repete
 

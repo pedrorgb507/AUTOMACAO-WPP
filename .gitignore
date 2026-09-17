@@ -41,5 +41,8 @@ copias-de-seguranca/
 # Use o config_teams_web.EXEMPLO.json como molde.
 config_teams_web.json
 
-# Sessao logada do Drive: contem cookies de login
-perfil_drive_web/
+# Credenciais do Google Drive: o credenciais_drive.json identifica o aplicativo
+# e o token_drive.json E o acesso a conta - quem tem o token le o Drive sem
+# precisar de senha nenhuma.
+credenciais_drive.json
+token_drive.json

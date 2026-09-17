@@ -24,7 +24,7 @@ import re
 import sys
 import time
 
-import drive_web
+import drive_api
 import pastas
 
 
@@ -319,7 +319,7 @@ def uma_passada(cfg, modo_teste=False):
                         cliente["pasta"], len(ids_drive), assunto[:40]))
                 else:
                     if sessao_drive is None:
-                        sessao_drive = drive_web.SessaoDrive(
+                        sessao_drive = drive_api.SessaoDrive(
                             visivel=bool(cfg.get("mostrar_navegador", False)))
                     anexos = anexos + anexos_do_drive(cfg, sessao_drive, ids_drive, assunto)
                     if not anexos:
