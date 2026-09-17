@@ -245,8 +245,8 @@ e-mails:
 2. **APIs e serviços → Biblioteca** → procure **Google Drive API** → **Ativar**.
 3. **APIs e serviços → Tela de permissão OAuth** → tipo **Externo** → preencha
    nome do app e e-mail de contato.
-4. Ainda na tela de permissão, em **Usuários de teste**, adicione o próprio
-   e-mail da conta. Sem isso o login é recusado.
+4. Na aba **Público-alvo**, clique em **Publicar app** para mudar o status de
+   *Teste* para *Em produção*. Explicado abaixo por que isso importa.
 5. **APIs e serviços → Credenciais → Criar credenciais → ID do cliente OAuth**
    → tipo **App para computador** → **Criar** → **Fazer download do JSON**.
 6. Salve o arquivo baixado nesta pasta com o nome exato
@@ -259,13 +259,21 @@ e-mails:
 Pronto. O acesso fica em `token_drive.json`, que **vale como senha** e está no
 `.gitignore` junto com o `credenciais_drive.json`.
 
-### Importante: o modo "Teste" expira em 7 dias
+> O Google renomeia essas telas de tempos em tempos. Hoje a "Tela de permissão
+> OAuth" aparece como **Plataforma de autenticação do Google**, com as abas
+> *Visão geral*, *Branding*, **Público-alvo**, *Clientes* e *Acesso a dados*.
+> Se os nomes mudarem de novo, procure pela aba que fala de público/audiência.
 
-Enquanto a tela de permissão estiver com status **Teste**, o Google **invalida o
-acesso a cada 7 dias** e o `GMAIL-LOGIN.bat` precisa ser rodado de novo. Para
-não conviver com isso, volte na **Tela de permissão OAuth** e mude o status para
-**Em produção**. O aviso de "app não verificado" continua aparecendo no login —
-é esperado e não atrapalha.
+### Por que publicar (passo 4) e não usar "usuários de teste"
+
+Enquanto o status for **Teste**, duas coisas atrapalham: só e-mails cadastrados
+como *usuário de teste* conseguem autorizar, e o Google **invalida o acesso a
+cada 7 dias** — o `GMAIL-LOGIN.bat` teria que ser rodado toda semana.
+
+**Em produção** resolve os dois: não precisa cadastrar ninguém e o acesso não
+expira sozinho. O aviso de "app não verificado" continua aparecendo no login, e
+é esperado — verificação só é exigida para distribuir o app a outras pessoas,
+que não é o caso.
 
 Se o acesso vencer, o robô **avisa no log e não marca o e-mail como tratado**:
 ele tenta de novo a cada passada, então nada se perde enquanto você não refaz o
