@@ -40,3 +40,6 @@ copias-de-seguranca/
 # O config do robo do Teams Web tambem nomeia cliente e grupo.
 # Use o config_teams_web.EXEMPLO.json como molde.
 config_teams_web.json
+
+# Sessao logada do Drive: contem cookies de login
+perfil_drive_web/

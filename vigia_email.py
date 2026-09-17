@@ -20,9 +20,11 @@ import email.utils
 import imaplib
 import json
 import os
+import re
 import sys
 import time
 
+import drive_web
 import pastas
 
 
@@ -154,6 +156,61 @@ def anexos_da_mensagem(cfg, msg):
     return saida
 
 
+
+# Link que o Gmail poe no lugar do anexo quando o arquivo e grande demais.
+RE_DRIVE = re.compile(r"drive\.google\.com/file/d/([\w-]+)")
+
+
+def links_do_drive(msg):
+    """Ids dos arquivos do Drive citados no corpo, sem repetir.
+
+    Quando o anexo passa do limite do Gmail, o e-mail chega SEM anexo e com um
+    link no corpo. Antes isso era lido como "e-mail sem nada para baixar" e o
+    arquivo se perdia em silencio - que e pior do que um erro, porque ninguem
+    fica sabendo.
+    """
+    ids = []
+    for parte in msg.walk():
+        if parte.get_content_type() not in ("text/plain", "text/html"):
+            continue
+        try:
+            corpo = parte.get_payload(decode=True)
+        except Exception:
+            continue
+        if not corpo:
+            continue
+        texto = corpo.decode(parte.get_content_charset() or "utf-8", "replace")
+        for achado in RE_DRIVE.findall(texto):
+            if achado not in ids:
+                ids.append(achado)
+    return ids
+
+
+def anexos_do_drive(cfg, sessao, ids, assunto):
+    """Baixa cada link e devolve (nome, bytes), no mesmo formato de um anexo.
+
+    Assim o link entra no vigia pelo caminho de sempre, e o resto do codigo nao
+    precisa saber que aquele arquivo veio de outro lugar.
+    """
+    limite = float(cfg.get("tamanho_maximo_drive_mb", 500)) * 1048576
+    saida = []
+    for id_arquivo in ids:
+        try:
+            nome, dados = sessao.baixar(id_arquivo)
+        except Exception as e:
+            registrar("ERRO ao baixar do Drive o link de '{}': {}".format(
+                assunto[:40], str(e)[:110]))
+            continue
+        if len(dados) > limite:
+            registrar("AVISO: '{}' tem {:.1f} MB e passa do limite do Drive"
+                      " ({:g} MB); nao guardei.".format(
+                          nome, len(dados) / 1048576, limite / 1048576))
+            continue
+        registrar("    veio por link do Drive: {} ({:.1f} MB)".format(nome, len(dados) / 1048576))
+        saida.append((nome, dados))
+    return saida
+
+
 ULTIMO_ESTADO = {"valor": None}
 
 
@@ -182,6 +239,9 @@ def ids_desde(caixa, desde):
 
 
 def uma_passada(cfg, modo_teste=False):
+    # So nasce se algum e-mail trouxer link do Drive: abrir o Chrome custa caro
+    # e a maioria dos e-mails tem anexo comum.
+    sessao_drive = None
     reg = ler_registro()
     if reg is None:
         horas = float(cfg.get("horas_retroativas_primeira_vez", 12))
@@ -234,7 +294,11 @@ def uma_passada(cfg, modo_teste=False):
                 continue
             msg = email.message_from_bytes(dados[0][1])
             anexos = anexos_da_mensagem(cfg, msg)
-            if not anexos:
+            # Sem anexo nao quer dizer sem arquivo: pode ter vindo por link do
+            # Drive. So se procura link quando nao ha anexo, para nao baixar
+            # duas vezes o que o cliente mandou dos dois jeitos.
+            ids_drive = [] if anexos else links_do_drive(msg)
+            if not anexos and not ids_drive:
                 ja.add(chave)
                 reg["baixados"].append(chave)
                 continue
@@ -248,6 +312,20 @@ def uma_passada(cfg, modo_teste=False):
                     registrar("    Anexos: {}".format(", ".join(n for n, _ in anexos)))
                     continue
                 cliente = {"pasta": padrao}
+
+            if ids_drive:
+                if modo_teste:
+                    registrar("[TESTE] {} -> {} link(s) do Drive em '{}'".format(
+                        cliente["pasta"], len(ids_drive), assunto[:40]))
+                else:
+                    if sessao_drive is None:
+                        sessao_drive = drive_web.SessaoDrive(
+                            visivel=bool(cfg.get("mostrar_navegador", False)))
+                    anexos = anexos + anexos_do_drive(cfg, sessao_drive, ids_drive, assunto)
+                    if not anexos:
+                        # nao registra: sem arquivo salvo, tenta de novo na
+                        # proxima passada em vez de dar o e-mail por resolvido
+                        continue
 
             salvou_algum = False
             for nome, conteudo in anexos:

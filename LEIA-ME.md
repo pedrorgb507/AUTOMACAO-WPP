@@ -203,3 +203,43 @@ Nada pendente da lista antiga. O Teams corporativo foi removido: `vigia_teams.py
 `config_teams.json`, `token_teams.bin`, `graph_anexo.py` e `reenviar_aviso.py`
 saíram, junto dos `.bat` deles. Estão no git (commit `3bede1b`) e há cópia dos
 não versionados em `copias-de-seguranca/`.
+
+# VIGIA E-MAIL
+
+Baixa os anexos que os clientes mandam para `finartdigitalgo@gmail.com` e salva
+na pasta do dia do cliente. A pasta usa a data **do e-mail**, não a de hoje —
+um e-mail de ontem baixado hoje vai para a pasta de ontem.
+
+| O que | Como |
+|---|---|
+| Ver o que ele baixaria | `EMAIL-TESTAR.bat` |
+| Rodar continuamente | `EMAIL-VIGIAR.bat` |
+| Entrar na conta do Drive (uma vez) | `GMAIL-LOGIN.bat` |
+
+## Arquivo grande vem por link, não por anexo
+
+Quando o arquivo passa do limite do Gmail, **o e-mail chega sem anexo nenhum** e
+com um link do Google Drive no corpo. Antes isso era lido como "e-mail sem nada
+para baixar": o robô marcava como tratado e seguia **em silêncio**. Arquivos da
+Viva se perderam assim, e ninguém notou porque não havia erro no log.
+
+Agora ele segue o link. Mas o link não é público — vem compartilhado com a nossa
+conta — então baixar exige estar logado. A senha de aplicativo do `config_email.json`
+**não serve**: ela vale para IMAP, não para o Drive. Por isso existe um navegador
+com sessão própria, igual ao do Teams:
+
+1. Rode o **`GMAIL-LOGIN.bat`** e entre na conta que recebe os e-mails.
+2. A sessão fica em `perfil_drive_web/` — **vale como senha**, está no `.gitignore`.
+
+Se a sessão cair, o robô avisa no log e **não marca o e-mail como tratado**, então
+ele tenta de novo na passada seguinte em vez de perder o arquivo.
+
+O `tamanho_maximo_drive_mb` (500) é maior que o limite de anexo de propósito:
+link do Drive existe justamente porque o arquivo é grande.
+
+## Se o registro sumir, ele repete
+
+`ja_baixados_email.json` guarda o que já foi baixado. Se o arquivo some ou fica
+ilegível, o robô se declara "primeira execução", refaz as últimas 12 horas e
+baixa de novo o que já tinha — aparecem cópias com `_2` no nome. Aconteceu em
+17/09. Se vir duplicados, foi isso.
