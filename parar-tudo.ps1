@@ -26,9 +26,16 @@ function Alvos {
                 $_.CommandLine -like '*drive_api*' )
         }
 
-    # o Chrome do robo (o do dia a dia nao usa esse perfil e nao e tocado)
+    # Os Chrome dos robos. Sao DOIS lugares diferentes, e esquecer o segundo
+    # custou uma sessao travada em 17/09: o do Teams usa perfil_teams_web, e o
+    # OpenWA abre o seu proprio em data\sessions\session-<nome>. Sobrando vivo,
+    # ele segura o lockfile e o OpenWA seguinte nao consegue subir a sessao -
+    # o painel mostra "The browser is already running" e o QR nunca aparece.
+    # O Chrome do dia a dia nao casa com nenhum dos dois e nao e tocado.
     $lista += Get-CimInstance Win32_Process -Filter "Name='chrome.exe'" |
-        Where-Object { $_.CommandLine -like '*perfil_teams_web*' }
+        Where-Object { $_.CommandLine -like '*perfil_teams_web*' -or
+                       $_.CommandLine -like '*session-*' -or
+                       $_.CommandLine -like '*OpenWA*' }
 
     # o OpenWA: pelo caminho e, sobretudo, por quem esta ocupando as portas -
     # os invisiveis do npm so aparecem por aqui
