@@ -68,7 +68,7 @@ def registrar(msg):
         pass
 
 
-def credenciais(interativo=False):
+def credenciais(interativo=False, forcar=False):
     """Devolve a autorizacao da conta, renovando sozinha quando vence.
 
     O token vence toda hora, mas vem com um 'refresh token' que o renova sem
@@ -76,8 +76,15 @@ def credenciais(interativo=False):
     refresh falhar (senha trocada, acesso revogado), so um login novo resolve,
     e ai e preciso alguem na frente do computador.
     """
+    # 'forcar' existe por causa de um caso concreto: publicar o app no Google nao
+    # renova o acesso que ja esta na maquina. Um token emitido enquanto a tela de
+    # permissao estava em "Teste" carrega o prazo de 7 dias CONSIGO, e reaproveita-lo
+    # faz o login dizer "AUTORIZADO" sem ter autorizado nada - o prazo segue correndo
+    # e ninguem descobre ate ele vencer.
     cred = None
-    if os.path.exists(TOKEN):
+    if forcar:
+        cred = None
+    elif os.path.exists(TOKEN):
         try:
             cred = Credentials.from_authorized_user_file(TOKEN, ESCOPOS)
         except Exception:
@@ -181,7 +188,7 @@ def main():
     a = ap.parse_args()
     if a.login:
         try:
-            credenciais(interativo=True)
+            credenciais(interativo=True, forcar=True)
             registrar("AUTORIZADO. O acesso fica guardado em token_drive.json.")
             registrar("Nao precisa repetir: o robo renova sozinho daqui para frente.")
         except Exception as e:
