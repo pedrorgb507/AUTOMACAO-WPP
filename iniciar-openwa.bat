@@ -86,6 +86,12 @@ echo      API:       http://localhost:2785/api
 echo      Swagger:   http://localhost:2785/api/docs
 echo.
 rem Religa sozinha a sessao do WhatsApp que ja estava conectada
+rem Motor do WhatsApp. O whatsapp-web.js (padrao) dirige o WhatsApp Web num
+rem navegador escondido e chama as funcoes internas da pagina - quando o WhatsApp
+rem atualiza o Web, o envio de midia quebra por inteiro (17/09/2026: "Data passed
+rem to getter must include an id property", texto passava e midia nao). O baileys
+rem fala o protocolo direto, sem navegador e sem depender do JS do WhatsApp.
+set "ENGINE_TYPE=baileys"
 set "AUTO_START_SESSIONS=true"
 rem Aceita arquivos de ate 200 MB vindos do WhatsApp (padrao era 50 MB)
 set "MEDIA_DOWNLOAD_MAX_BYTES=209715200"
@@ -93,7 +99,10 @@ set "MEDIA_DOWNLOAD_TIMEOUT_MS=300000"
 rem Clique duplo: liga o VIGIA WHATSAPP numa janela separada.
 rem No VS Code o vigia roda como outra tarefa, no proprio terminal do VS Code.
 if /i not "%MODO%"=="vscode" start "VIGIA WHATSAPP" /min "%AQUI%VIGIAR.bat"
-call npm run dev
+rem Grava a saida do OpenWA em arquivo ALEM de mostrar na tela. Sem isso o motivo
+rem de um erro 500 so existe enquanto a janela estiver aberta - foi exatamente o
+rem que faltou para diagnosticar a falha de envio de midia em 17/09/2026.
+powershell -NoProfile -ExecutionPolicy Bypass -Command "npm run dev 2>&1 | Tee-Object -FilePath '%AQUI%openwa.log'"
 if /i not "%MODO%"=="vscode" pause
 exit /b 0
 

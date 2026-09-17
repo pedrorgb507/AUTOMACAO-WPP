@@ -436,20 +436,76 @@ def abrir_conversa(pg, nome):
 
 
 def anexos_recebidos(pg):
-    """[(data-mid, [nomes]), ...] das mensagens que o cliente mandou com anexo."""
+    """[{mid, nomes, texto}, ...] das mensagens que o cliente mandou com anexo.
+
+    O texto vem junto porque a Solida escreve o recado na MESMA mensagem do
+    arquivo ("URGENTE", "urgente a pedido do Gustavo"). Ler so o nome do anexo
+    joga esse recado fora, e ele e justamente o que decide a prioridade na
+    oficina.
+
+    O texto sai dos paragrafos da mensagem, nao do textContent inteiro: este
+    ultimo traz junto o nome do arquivo e os rotulos dos botoes de reacao.
+    """
     return pg.evaluate("""(marca) => {
         const saida = [];
         document.querySelectorAll('[data-tid="chat-pane-message"]').forEach(e => {
             if ((e.className||'').toString().includes(marca)) return;   // nossa, ignora
             const cs = [...e.querySelectorAll('[data-tid^="file-chiclet-"]')];
             if (!cs.length) return;
+            const paragrafos = [...e.querySelectorAll('p')]
+                .map(p => (p.textContent || '').trim())
+                .filter(t => t);
             saida.push({
                 mid: e.getAttribute('data-mid'),
-                nomes: cs.map(c => (c.getAttribute('data-tid')||'').replace('file-chiclet-',''))
+                nomes: cs.map(c => (c.getAttribute('data-tid')||'').replace('file-chiclet-','')),
+                texto: paragrafos.join(' ')
             });
         });
         return saida;
     }""", CLASSE_MINHA)
+
+
+# Recado que o fechamento le para carimbar a prova. Fica ao lado do arquivo,
+# com o mesmo nome mais este sufixo, porque assim ele acompanha o arquivo se
+# alguem mover a pasta - e quem nao conhece o recado simplesmente o ignora,
+# entao os dois projetos seguem independentes.
+SUFIXO_RECADO = ".recado.json"
+
+
+def urgencia_no_texto(texto):
+    """A frase que a Solida escreveu, se ela indicar urgencia. Senao, ''.
+
+    Casa por 'urgen' para pegar urgente, urgentissima, URGENTES e o que mais
+    vier, sem depender de acento nem de caixa. E especifico o bastante para
+    nao disparar em palavra comum.
+    """
+    import unicodedata
+    if not texto:
+        return ""
+    limpo = unicodedata.normalize("NFKD", texto)
+    limpo = "".join(c for c in limpo if not unicodedata.combining(c)).lower()
+    return texto.strip() if "urgen" in limpo else ""
+
+
+def gravar_recado(destino, texto_da_mensagem, mid):
+    """Grava o recado ao lado do arquivo baixado. Devolve a urgencia achada.
+
+    Falhar aqui nao pode derrubar o download: o arquivo ja esta salvo, e uma
+    prova sem o carimbo e um problema menor do que um arquivo que nao chegou.
+    """
+    urgente = urgencia_no_texto(texto_da_mensagem)
+    if not urgente:
+        return ""
+    try:
+        with open(destino + SUFIXO_RECADO, "w", encoding="utf-8") as f:
+            json.dump({"urgente": True,
+                       "texto_do_cliente": urgente,
+                       "mensagem": mid,
+                       "quando": dt.datetime.now().isoformat(timespec="seconds")},
+                      f, ensure_ascii=False, indent=2)
+    except OSError as e:
+        registrar("AVISO: nao consegui gravar o recado de urgencia ({}).".format(str(e)[:70]))
+    return urgente
 
 
 def navegador_morreu(e):
@@ -926,6 +982,10 @@ def passada_na_pagina(cfg, ctx, pg, modo_teste=False):
             registrar("    Arquivo: {} ({:.2f} MB)".format(
                 os.path.basename(destino), os.path.getsize(destino) / 1048576))
             registrar("    Pasta: {}".format(os.path.dirname(destino)))
+            urgente = gravar_recado(destino, item.get("texto"), mid)
+            if urgente:
+                registrar("    URGENTE (a Solida escreveu: {!r}) - a prova sai com"
+                          " o aviso de prioridade.".format(urgente[:60]))
             if cfg.get("reagir_ao_baixar", True):
                 registrar("    Visto na mensagem: {}".format(
                     "ok" if reagir(pg, mid) else "falhou"))

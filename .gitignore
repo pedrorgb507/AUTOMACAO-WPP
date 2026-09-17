@@ -46,3 +46,6 @@ config_teams_web.json
 # precisar de senha nenhuma.
 credenciais_drive.json
 token_drive.json
+
+# Log do OpenWA: barulho de execucao, muda o tempo todo
+openwa.log
