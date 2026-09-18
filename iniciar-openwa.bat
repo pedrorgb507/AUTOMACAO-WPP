@@ -93,6 +93,13 @@ rem to getter must include an id property", texto passava e midia nao). O bailey
 rem fala o protocolo direto, sem navegador e sem depender do JS do WhatsApp.
 set "ENGINE_TYPE=baileys"
 set "AUTO_START_SESSIONS=true"
+rem O log do baileys vem 'silent' de fabrica, e por isso uma reacao recusada
+rem pelo WhatsApp (ack 463 em contato migrado para LID) nao deixava rastro
+rem nenhum: a API responde 'success' ao despachar e a recusa chega depois.
+rem 'warn' no dia a dia. Suba para 'debug' quando precisar ver o protocolo: foi
+rem assim que se achou por que a reacao nao aparecia em conversa individual
+rem (ver patches-openwa/LEIA-ME.md). O 'debug' enche o log depressa.
+set "BAILEYS_LOG_LEVEL=warn"
 rem Aceita arquivos de ate 200 MB vindos do WhatsApp (padrao era 50 MB)
 set "MEDIA_DOWNLOAD_MAX_BYTES=209715200"
 set "MEDIA_DOWNLOAD_TIMEOUT_MS=300000"
@@ -103,7 +110,13 @@ if /i not "%MODO%"=="vscode" start "VIGIA WHATSAPP" /min cmd /c "timeout /t 30 >
 rem Grava a saida do OpenWA em arquivo ALEM de mostrar na tela. Sem isso o motivo
 rem de um erro 500 so existe enquanto a janela estiver aberta - foi exatamente o
 rem que faltou para diagnosticar a falha de envio de midia em 17/09/2026.
-powershell -NoProfile -ExecutionPolicy Bypass -Command "npm run dev 2>&1 | Tee-Object -FilePath '%AQUI%openwa.log'"
+rem Duas correcoes nesta linha, as duas descobertas tentando ler este log:
+rem  1) o Tee-Object do PowerShell 5.1 grava em UTF-16 e nao aceita -Encoding,
+rem     o que deixa o arquivo ilegivel para grep e para qualquer busca comum;
+rem  2) ele sobrescrevia o log a cada partida, entao o registro de uma falha
+rem     morria no proximo religar - justamente quando mais se precisa dele.
+rem Agora grava em UTF-8 e guarda a execucao anterior em openwa.log.anterior.
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$f='%AQUI%openwa.log'; if(Test-Path $f){Move-Item $f ($f+'.anterior') -Force}; npm run dev 2>&1 | ForEach-Object { Write-Host $_; Add-Content -LiteralPath $f -Value $_ -Encoding UTF8 }"
 if /i not "%MODO%"=="vscode" pause
 exit /b 0
 

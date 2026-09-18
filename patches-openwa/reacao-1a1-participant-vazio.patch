@@ -1,0 +1,43 @@
+diff --git a/src/engine/adapters/baileys-messaging.ts b/src/engine/adapters/baileys-messaging.ts
+index 570f9ff5..c99a177c 100644
+--- a/src/engine/adapters/baileys-messaging.ts
++++ b/src/engine/adapters/baileys-messaging.ts
+@@ -475,12 +475,37 @@ export class BaileysMessaging {
+     return this.sendContent(toChatId, { forward });
+   }
+ 
++  /**
++   * Trim a stored key down to what proto.MessageKey actually carries.
++   *
++   * The stored key round-trips through JSON and comes back with an empty-string
++   * `participant` on every 1:1 message, plus fields the proto does not define at
++   * all (`remoteJidAlt`, `participantAlt`, `addressingMode`). protobufjs writes a
++   * field whenever the property EXISTS — `m.participant != null &&
++   * hasOwnProperty(m, 'participant')` (WAProto/index.js MessageKey.encode) — so
++   * `participant: ''` is NOT the same as absent: it goes out as an explicit empty
++   * participant, which is a group-shaped key attached to a 1:1 message.
++   *
++   * Symptom (Finart, 18/09/2026): reactions in group chats appear, reactions in
++   * 1:1 chats never do. Nothing errors — the stanza goes to the same devices as a
++   * text that delivers fine, and the API answers success.
++   */
++  private wireKey(key: WAMessage['key']): WAMessage['key'] {
++    const enxuta: WAMessage['key'] = { remoteJid: key.remoteJid, fromMe: key.fromMe, id: key.id };
++    if (key.participant) {
++      enxuta.participant = key.participant;
++    }
++    return enxuta;
++  }
++
+   async reactToMessage(chatId: string, messageId: string, emoji: string): Promise<void> {
+     this.host.ensureReady();
+     const target = await this.requireStored(messageId);
+     this.assertStoredInChat(target, chatId, messageId);
+     // Resolved like any other send: a lid-migrated contact rejects PN-addressed sends (ack 463).
+-    await this.sock().sendMessage(await this.toDeliverableJid(chatId), { react: { text: emoji, key: target.key } });
++    await this.sock().sendMessage(await this.toDeliverableJid(chatId), {
++      react: { text: emoji, key: this.wireKey(target.key) },
++    });
+   }
+ 
+   async deleteMessage(chatId: string, messageId: string, forEveryone = true): Promise<void> {

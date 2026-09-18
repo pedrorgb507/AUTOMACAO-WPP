@@ -29,6 +29,18 @@ estiverem rodando, a automação funciona.
 | `iniciar-openwa.bat` | Liga o OpenWA. Clique duplo também funciona (abre janelas separadas). |
 | `PARAR-TUDO.bat` | Encerra todos os robôs com segurança antes de religar. |
 
+## O ✅ depende de um conserto feito no OpenWA
+
+O robô marca com ✅ cada arquivo que baixa. Em 18/09/2026 descobriu-se que essa
+marca aparecia **só em grupo** — em conversa individual nunca, e sem erro em
+lugar nenhum. A causa estava no OpenWA, não aqui, e o conserto foi feito lá
+dentro.
+
+**O OpenWA não faz parte deste repositório.** Ao atualizá-lo o conserto se
+perde, e a marcação volta a falhar **em silêncio**: a API segue respondendo
+`success` e o log segue limpo. Depois de toda atualização do OpenWA, reaplique
+o patch de `patches-openwa/` — a pasta tem o passo a passo e a explicação.
+
 ## Adicionar cliente
 
 No `config.json`, dentro de `"clientes"`, uma linha por número (vírgula entre as linhas):
