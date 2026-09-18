@@ -19,7 +19,7 @@ Primeira vez (uma so):
     1. Crie a credencial no Google Cloud Console - o passo a passo esta no
        LEIA-ME, secao "Ligar o Drive na primeira vez".
     2. Salve o arquivo baixado como credenciais_drive.json aqui nesta pasta.
-    3. Rode GMAIL-LOGIN.bat e autorize na janela que abrir.
+    3. Rode a tarefa "Drive: refazer login do Google" (Ctrl+Shift+P, Tasks: Run Task) e autorize na janela que abrir.
 
 Uso:
     python drive_api.py --login        autoriza a conta (abre o seu navegador)
@@ -104,7 +104,7 @@ def credenciais(interativo=False, forcar=False):
 
     if not interativo:
         raise RuntimeError(
-            "sem autorizacao do Drive - rode GMAIL-LOGIN.bat e entre na conta")
+            "sem autorizacao do Drive - rode a tarefa 'Drive: refazer login do Google'")
 
     if not os.path.exists(CREDENCIAIS):
         raise RuntimeError(

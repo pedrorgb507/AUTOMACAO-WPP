@@ -16,7 +16,7 @@ chat dela e de conta pessoal, e mandar por ali dispensa subir o arquivo para o
 OneDrive e liberar leitura para o cliente: a sessao logada resolve a permissao,
 igual a quando a gente anexa na mao. Quem manda por WhatsApp segue pelo OpenWA.
 
-O login do navegador e o mesmo do robo que baixa: TEAMS-WEB-LOGIN.bat.
+O login do navegador e o mesmo do robo que baixa: tarefa "Teams: refazer login".
 
 Uso:
     python vigia_cip.py            uma passada
@@ -35,6 +35,7 @@ import sys
 import time
 import urllib.parse
 
+import painel
 import pastas
 import teams_web as tw
 
@@ -324,10 +325,14 @@ def processar_pasta(cfg, entrada, sessao, modo_teste):
                       "Mova na mao para nao mandar duas vezes.".format(novo_nome, e))
             continue
 
-        registrar("ENVIADO  >>  {}  ({})".format(novo_nome, nome_pasta))
-        if novo_nome != nome:
-            registrar("    de: {}".format(nome))
-        registrar("    arquivado em: {}".format(destino))
+        # So chega aqui depois do envio confirmado E do arquivo sair da fila:
+        # o bloco diz ENVIADO porque as duas coisas ja aconteceram.
+        painel.bloco(LOG, nome_pasta, [
+            ("CIP", novo_nome),
+            ("DE", nome if novo_nome != nome else None),
+            ("ENVIADO", ""),
+            ("ARQUIVADO EM", destino),
+        ])
         feitos += 1
     return feitos
 

@@ -19,6 +19,7 @@ import json
 import os
 import time
 
+import painel
 import vigia_whatsapp as wa
 
 
@@ -106,12 +107,10 @@ def _marcar_os(cfg_wa, chave, sessao_id, gid, msgs, os_num, registrar):
             marcadas += 1
         except Exception as e:
             registrar("AVISO: nao consegui marcar a OS {} no grupo ({}).".format(os_num, e))
-    if marcadas:
-        registrar("    OS {} marcada no grupo do WhatsApp ({} mensagem(ns)).".format(os_num, marcadas))
     return marcadas > 0
 
 
-def processar(cfg, nomes_baixados, registrar):
+def processar(cfg, nomes_baixados, registrar, caminho_log=None):
     """Marca no grupo as OS dos arquivos recem-baixados e cuida das pendentes.
 
     Chamada a cada passada do vigia do Teams, mesmo sem arquivo novo: as OS que
@@ -163,8 +162,14 @@ def processar(cfg, nomes_baixados, registrar):
     limite = float(cfg.get("horas_para_desistir_da_os", 24)) * 3600
     sobraram = {}
 
+    cliente = cfg.get("nome_cliente") or cfg.get("conversa") or "?"
     for os_num, info in pendentes.items():
         if _marcar_os(cfg_wa, chave, sessao_id, gid, msgs, os_num, registrar):
+            painel.bloco(caminho_log, cliente, [
+                ("ARQUIVO", info.get("arquivo")),
+                ("OS", os_num),
+                ("MARCADO NO WHATSAPP", "OK"),
+            ])
             continue
         idade = agora - info.get("desde", agora)
         if idade > limite:

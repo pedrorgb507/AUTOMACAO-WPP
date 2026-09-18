@@ -27,7 +27,7 @@ estiverem rodando, a automação funciona.
 | `ja_baixados.json` | Controle interno do que já foi baixado (não editar). |
 | `AUTOMACAO-WPP.code-workspace` | Abre o projeto no VS Code com as tarefas. **Sempre abra por ele.** |
 | `iniciar-openwa.bat` | Liga o OpenWA. Clique duplo também funciona (abre janelas separadas). |
-| `VIGIAR.bat` / `TESTAR.bat` | Versões de clique duplo do vigia. |
+| `PARAR-TUDO.bat` | Encerra todos os robôs com segurança antes de religar. |
 
 ## Adicionar cliente
 
@@ -74,10 +74,12 @@ pasta vale como senha** — está no `.gitignore`.
 
 | O que | Como |
 |---|---|
-| Entrar na conta (uma vez) | `TEAMS-WEB-LOGIN.bat` |
-| Ver o que ele baixaria | `TEAMS-WEB-TESTAR.bat` |
-| Marcar o que já está tratado | `TEAMS-WEB-CORTE.bat` |
-| Rodar continuamente | `TEAMS-WEB-VIGIAR.bat` |
+| Entrar na conta (uma vez) | Tarefa **Teams: refazer login** |
+| Ver o que ele baixaria | Tarefa **Teams: testar (sem salvar nada)** |
+| Marcar o que já está tratado | Tarefa **Teams: marcar o que esta na tela como tratado (corte)** |
+| Rodar continuamente | Sobe junto no `Ctrl+Shift+B` (Vigia Sólida) |
+
+As tarefas ficam em `Ctrl+Shift+P` → `Tasks: Run Task`.
 
 O `--vigiar` mantém o navegador aberto entre as checagens e recarrega só a
 página. Uma passada com download leva uns 30 segundos.
@@ -187,10 +189,11 @@ janela à mesma `SessaoNavegador`.
 
 Duas consequências práticas:
 
-**Rode um de cada vez.** `TEAMS-WEB-VIGIAR.bat`, `CIP-VIGIAR.bat` e o Vigia
-Sólida do Ctrl+Shift+B disputam o mesmo perfil. O do Ctrl+Shift+B já faz os
-dois trabalhos; os `.bat` avulsos servem para rodar à mão quando ele está
-parado.
+**Rode um de cada vez.** O Vigia Sólida do Ctrl+Shift+B já faz os dois
+trabalhos (Teams e CIP) num processo só, justamente porque eles não podem
+dividir o perfil. Não suba uma segunda cópia do robô do Teams ou do CIP por
+fora enquanto ele estiver rodando: a segunda encontra o perfil travado e falha
+com uma mensagem que parece outra coisa.
 
 **Se o robô for morto sem fechar direito, o Chrome dele continua rodando e
 tranca o perfil.** O próximo start falha até você fechar essas janelas (ou
@@ -212,9 +215,9 @@ um e-mail de ontem baixado hoje vai para a pasta de ontem.
 
 | O que | Como |
 |---|---|
-| Ver o que ele baixaria | `EMAIL-TESTAR.bat` |
-| Rodar continuamente | `EMAIL-VIGIAR.bat` |
-| Entrar na conta do Drive (uma vez) | `GMAIL-LOGIN.bat` |
+| Ver o que ele baixaria | Tarefa **Email: testar (sem salvar nada)** |
+| Rodar continuamente | Sobe junto no `Ctrl+Shift+B` (Vigia Email) |
+| Entrar na conta do Drive | Tarefa **Drive: refazer login do Google** |
 
 ## Arquivo grande vem por link, não por anexo
 
@@ -251,7 +254,7 @@ e-mails:
    → tipo **App para computador** → **Criar** → **Fazer download do JSON**.
 6. Salve o arquivo baixado nesta pasta com o nome exato
    **`credenciais_drive.json`**.
-7. Rode o **`GMAIL-LOGIN.bat`**. Abre o seu navegador; escolha a conta e
+7. Rode a tarefa **Drive: refazer login do Google** (`Ctrl+Shift+P` → `Tasks: Run Task`). Abre o seu navegador; escolha a conta e
    autorize. Na tela *"O Google não verificou este app"*, clique em
    **Avançado → Acessar (não seguro)** — o "app" é este robô, rodando no seu
    PC.
@@ -268,7 +271,7 @@ Pronto. O acesso fica em `token_drive.json`, que **vale como senha** e está no
 
 Enquanto o status for **Teste**, duas coisas atrapalham: só e-mails cadastrados
 como *usuário de teste* conseguem autorizar, e o Google **invalida o acesso a
-cada 7 dias** — o `GMAIL-LOGIN.bat` teria que ser rodado toda semana.
+cada 7 dias** — a tarefa **Drive: refazer login do Google** teria que ser rodada toda semana.
 
 **Em produção** resolve os dois: não precisa cadastrar ninguém e o acesso não
 expira sozinho. O aviso de "app não verificado" continua aparecendo no login, e

@@ -25,6 +25,7 @@ import sys
 import time
 
 import drive_api
+import painel
 import pastas
 
 
@@ -328,6 +329,10 @@ def uma_passada(cfg, modo_teste=False):
                         continue
 
             salvou_algum = False
+            # Os blocos so saem depois da tentativa de marcar como lido: um
+            # e-mail pode trazer varios anexos, e a marcacao e do e-mail
+            # inteiro. Imprimir antes obrigaria a adivinhar o resultado dela.
+            blocos = []
             for nome, conteudo in anexos:
                 if modo_teste:
                     registrar("[TESTE] {} -> {} ({:.1f} MB, de {})".format(
@@ -340,10 +345,7 @@ def uma_passada(cfg, modo_teste=False):
                 except OSError as e:
                     registrar("ERRO ao salvar '{}' de {}: {}".format(nome, cliente["pasta"], e))
                     continue
-                registrar("ARQUIVO SALVO  >>  CLIENTE: {}".format(cliente["pasta"]))
-                registrar("    Arquivo: {} ({:.1f} MB)".format(nome, len(conteudo) / 1048576))
-                registrar("    De: {}".format(remetente[:70]))
-                registrar("    Pasta: {}".format(os.path.dirname(destino)))
+                blocos.append((cliente["pasta"], nome, len(conteudo), remetente, destino))
                 salvos += 1
                 salvou_algum = True
 
@@ -353,12 +355,23 @@ def uma_passada(cfg, modo_teste=False):
                 gravar_registro(reg)
                 # so marca como lida se algum arquivo entrou mesmo. Se a gravacao
                 # falhou, a mensagem tem que continuar em negrito chamando atencao.
+                lido = None
                 if salvou_algum and cfg.get("marcar_como_lido", False):
                     try:
                         caixa.uid("STORE", uid, "+FLAGS", "(" + chr(92) + "Seen)")
-                        registrar("    Marcado como lido no Gmail.")
+                        lido = True
                     except imaplib.IMAP4.error as e:
+                        lido = False
                         registrar("AVISO: nao consegui marcar como lido ({}).".format(e))
+
+                for pasta_cliente, nome_arq, tamanho, quem, caminho in blocos:
+                    painel.bloco(LOG, pasta_cliente, [
+                        ("ARQUIVO", "{} ({:.1f} MB)".format(nome_arq, tamanho / 1048576)),
+                        ("DE", quem[:70]),
+                        ("BAIXADO", "OK"),
+                        ("MARCADO COMO LIDO", painel.ok_ou("FALHOU", lido)),
+                        ("PASTA", os.path.dirname(caminho)),
+                    ])
     finally:
         try:
             caixa.close()

@@ -196,6 +196,50 @@
       }
     },
     {
+      "label": "Teams: marcar o que esta na tela como tratado (corte)",
+      "detail": "Use antes da primeira vigia do dia para nao rebaixar o que ja foi tratado.",
+      "type": "process",
+      "command": "python",
+      "args": [
+        "teams_web.py",
+        "--corte"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "PYTHONIOENCODING": "utf-8"
+        }
+      },
+      "problemMatcher": [],
+      "presentation": {
+        "panel": "shared",
+        "reveal": "always",
+        "clear": true
+      }
+    },
+    {
+      "label": "Drive: refazer login do Google",
+      "detail": "A autorizacao do Drive expira a cada 7 dias enquanto a tela de permissao do Google estiver em 'Testando'. Rode isto quando o Vigia Email parar de achar os arquivos grandes.",
+      "type": "process",
+      "command": "python",
+      "args": [
+        "drive_api.py",
+        "--login"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "PYTHONIOENCODING": "utf-8"
+        }
+      },
+      "problemMatcher": [],
+      "presentation": {
+        "panel": "shared",
+        "reveal": "always",
+        "clear": true
+      }
+    },
+    {
       "label": "CIP: testar (sem enviar nada)",
       "type": "process",
       "command": "python",

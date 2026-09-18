@@ -49,3 +49,10 @@ token_drive.json
 
 # Log do OpenWA: barulho de execucao, muda o tempo todo
 openwa.log
+
+# Perfil do Chrome do robo do Drive: sessao logada, nao pode ir para
+# repositorio publico.
+perfil_drive_web/
+
+# Saidas de diagnostico geradas durante o trabalho com o Claude.
+Claude outputs/

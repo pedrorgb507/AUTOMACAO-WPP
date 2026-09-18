@@ -25,6 +25,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+import painel
+
 
 AQUI = os.path.dirname(os.path.abspath(__file__))
 CONFIG = os.path.join(AQUI, "config.json")
@@ -545,16 +547,15 @@ def mostrar_so_na_tela(texto):
         print(texto.encode("ascii", "replace").decode(), flush=True)
 
 
-def anunciar_salvo(cliente, destino, tamanho, quem=None):
-    """Deixa bem visivel na tela de qual cliente era o arquivo que acabou de ser salvo."""
-    barra = "=" * 64
-    mostrar_so_na_tela(barra)
-    registrar("ARQUIVO SALVO  >>  CLIENTE: {}".format(cliente))
-    registrar("    Arquivo: {} ({:.1f} MB)".format(os.path.basename(destino), tamanho / 1048576))
-    if quem:
-        registrar("    Enviado por: {}".format(quem))
-    registrar("    Pasta: {}".format(os.path.dirname(destino)))
-    mostrar_so_na_tela(barra)
+def anunciar_salvo(cliente, destino, tamanho, quem=None, marcado=None):
+    """Bloco do painel para um arquivo que acabou de ser salvo."""
+    painel.bloco(LOG, cliente, [
+        ("ARQUIVO", "{} ({:.1f} MB)".format(os.path.basename(destino), tamanho / 1048576)),
+        ("DE", quem),
+        ("MARCADO", marcado),
+        ("BAIXADO", "OK"),
+        ("PASTA", os.path.dirname(destino)),
+    ])
 
 
 ULTIMO_ESTADO = {"valor": None}
@@ -665,7 +666,6 @@ def uma_passada(cfg, modo_teste=False):
                 registrar("ERRO ao salvar '{}' de {}: {}".format(nome, cliente["pasta"], e))
                 continue
 
-            anunciar_salvo(cliente["pasta"], destino, len(dados))
             ja.add(wid)
             reg["baixados"].append(wid)
             gravar_registro(reg)
@@ -673,10 +673,16 @@ def uma_passada(cfg, modo_teste=False):
 
             try:
                 reagir(cfg, chave, sessao["id"], msg.get("chatId") or "", wid)
+                # A API responde 'success' assim que despacha a reacao, e o motor
+                # baileys nao implementa a leitura de reacoes (501), entao daqui
+                # nao ha como saber se o visto colou. Dizer "OK" seria inventar.
+                marcado = "enviado (este motor nao confirma)"
             except (urllib.error.URLError, OSError, ErroApi) as e:
                 # o arquivo ja esta salvo e marcado como baixado; perder o visto
                 # nao pode fazer o arquivo ser baixado de novo na proxima passada
-                registrar("AVISO: '{}' foi salvo, mas nao consegui marcar o OK no WhatsApp: {}".format(nome, e))
+                marcado = "FALHOU ({})".format(e)
+
+            anunciar_salvo(cliente["pasta"], destino, len(dados), marcado=marcado)
     return salvos
 
 

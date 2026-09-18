@@ -25,6 +25,7 @@ import tempfile
 import time
 
 import marcar_no_grupo
+import painel
 import pastas
 
 try:
@@ -828,14 +829,14 @@ class SessaoNavegador(object):
             self.fechar()
             raise RuntimeError(
                 "nao consegui abrir o navegador do robo ({}). O perfil aceita um dono so, "
-                "entao ou ja ha outro robo rodando (o Vigia Solida, o TEAMS-WEB-VIGIAR ou "
-                "o CIP-VIGIAR - use um de cada vez), ou o Chrome de uma execucao anterior "
+                "entao ou ja ha outro robo rodando (o Vigia Solida ja faz Teams e CIP "
+                "juntos - nao suba uma segunda copia), ou o Chrome de uma execucao anterior "
                 "ficou aberto segurando o perfil: feche-o pelo Gerenciador de Tarefas "
                 "(chrome.exe) e tente de novo.".format(str(e).splitlines()[0][:80]))
         self._pg = self._ctx.pages[0] if self._ctx.pages else self._ctx.new_page()
         self._pg.goto(TEAMS, timeout=120000)
         if not esperar_carregar(self._pg):
-            raise RuntimeError("a sessao do Teams caiu - rode TEAMS-WEB-LOGIN.bat")
+            raise RuntimeError("a sessao do Teams caiu - rode a tarefa 'Teams: refazer login'")
         return self._pg
 
     def contexto(self):
@@ -930,7 +931,7 @@ def passada_na_pagina(cfg, ctx, pg, modo_teste=False):
     baixados_agora = []
     if not esperar_carregar(pg):
         registrar("SESSAO CAIU: o Teams pediu login de novo.")
-        registrar("    Rode TEAMS-WEB-LOGIN.bat e entre na conta; ate la nada e baixado.")
+        registrar("    Rode a tarefa 'Teams: refazer login' e entre na conta; ate la nada e baixado.")
         return 0
     if not abrir_conversa(pg, cfg["conversa"]):
         return 0
@@ -978,17 +979,21 @@ def passada_na_pagina(cfg, ctx, pg, modo_teste=False):
             gravar_registro(reg)
             baixados_agora.append(nome)
             salvos += 1
-            registrar("ARQUIVO SALVO  >>  CLIENTE: {}".format(cfg.get("nome_cliente") or cfg["conversa"]))
-            registrar("    Arquivo: {} ({:.2f} MB)".format(
-                os.path.basename(destino), os.path.getsize(destino) / 1048576))
-            registrar("    Pasta: {}".format(os.path.dirname(destino)))
+            # Tudo o que o bloco vai afirmar e apurado ANTES de imprimir: o painel
+            # relata o que aconteceu, nunca o que estava previsto acontecer.
             urgente = gravar_recado(destino, item.get("texto"), mid)
-            if urgente:
-                registrar("    URGENTE (a Solida escreveu: {!r}) - a prova sai com"
-                          " o aviso de prioridade.".format(urgente[:60]))
+            marcado = None
             if cfg.get("reagir_ao_baixar", True):
-                registrar("    Visto na mensagem: {}".format(
-                    "ok" if reagir(pg, mid) else "falhou"))
+                marcado = painel.ok_ou("FALHOU", reagir(pg, mid))
+            painel.bloco(LOG, cfg.get("nome_cliente") or cfg["conversa"], [
+                ("ARQUIVO", "{} ({:.2f} MB)".format(
+                    os.path.basename(destino), os.path.getsize(destino) / 1048576)),
+                ("MARCADO", marcado),
+                ("BAIXADO", "OK"),
+                ("URGENTE !!", "" if urgente else None),
+                ("MOTIVO", "a Solida escreveu {!r}".format(urgente[:60]) if urgente else None),
+                ("PASTA", os.path.dirname(destino)),
+            ])
     if velhas:
         registrar("({} mensagem(ns) com mais de {} dia(s) ignoradas.)".format(
             velhas, dias))
@@ -998,7 +1003,7 @@ def passada_na_pagina(cfg, ctx, pg, modo_teste=False):
         # DEPOIS de mandar o arquivo, entao as OS que ficaram pendentes
         # precisam ser tentadas de novo a cada passada.
         try:
-            marcar_no_grupo.processar(cfg, baixados_agora, registrar)
+            marcar_no_grupo.processar(cfg, baixados_agora, registrar, LOG)
         except Exception as e:
             registrar("AVISO: falhou ao marcar no grupo do WhatsApp ({}).".format(str(e)[:120]))
     return salvos

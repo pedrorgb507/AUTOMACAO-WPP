@@ -96,12 +96,13 @@ set "AUTO_START_SESSIONS=true"
 rem Aceita arquivos de ate 200 MB vindos do WhatsApp (padrao era 50 MB)
 set "MEDIA_DOWNLOAD_MAX_BYTES=209715200"
 set "MEDIA_DOWNLOAD_TIMEOUT_MS=300000"
-rem Clique duplo: liga o VIGIA WHATSAPP numa janela separada.
+rem Clique duplo: liga o VIGIA WHATSAPP numa janela separada. Espera 30s porque
+rem o vigia precisa do OpenWA de pe para achar a sessao.
 rem No VS Code o vigia roda como outra tarefa, no proprio terminal do VS Code.
-if /i not "%MODO%"=="vscode" start "VIGIA WHATSAPP" /min "%AQUI%VIGIAR.bat"
-rem Grava a saida do OpenWA em arquivo ALEM de mostrar na tela. Sem isso o motivo
-rem de um erro 500 so existe enquanto a janela estiver aberta - foi exatamente o
-rem que faltou para diagnosticar a falha de envio de midia em 17/09/2026.
+if /i not "%MODO%"=="vscode" start "VIGIA WHATSAPP" /min cmd /c "timeout /t 30 >nul & cd /d "%AQUI%" & set PYTHONIOENCODING=utf-8 & python vigia_whatsapp.py --vigiar & pause"
+rem Grava a saida do OpenWA em arquivo ALEM de mostrar na tela. Sem isso o motivo
+rem de um erro 500 so existe enquanto a janela estiver aberta - foi exatamente o
+rem que faltou para diagnosticar a falha de envio de midia em 17/09/2026.
 powershell -NoProfile -ExecutionPolicy Bypass -Command "npm run dev 2>&1 | Tee-Object -FilePath '%AQUI%openwa.log'"
 if /i not "%MODO%"=="vscode" pause
 exit /b 0
