@@ -29,6 +29,31 @@ estiverem rodando, a automação funciona.
 | `iniciar-openwa.bat` | Liga o OpenWA. Clique duplo também funciona (abre janelas separadas). |
 | `PARAR-TUDO.bat` | Encerra todos os robôs com segurança antes de religar. |
 
+## Os configs não vão para o GitHub — a cópia deles fica no servidor
+
+O repositório é **público**, e os arquivos de configuração trazem telefone de
+cliente, nome de grupo e a **senha de app do Gmail**. Por isso eles estão no
+`.gitignore`. O git guarda para sempre: apagar depois não tira do histórico.
+
+A consequência é que eles existiriam num disco só. Para não perder a lista de
+clientes se o HD queimar, uma tarefa do Windows copia os quatro configs de hora
+em hora para:
+
+```
+\\servidor\Finart\CONFIGS GUARDADOS
+```
+
+- **Na raiz** ficam as cópias mais recentes — é o que se usa para restaurar.
+- **Em `historico/`** ficam as 20 últimas versões de cada arquivo, com data.
+  Existe porque um config corrompido copiado por cima apagaria o bom, e aí o
+  backup viraria só uma sensação de segurança.
+
+Só copia o que mudou. Para rodar na mão: `GUARDAR-CONFIGS.bat`, ou
+`GUARDAR-CONFIGS.bat --listar` para ver o que já está guardado.
+
+**Essa pasta tem credencial dentro** (a senha do Gmail, no `config_email.json`).
+Não deixe o compartilhamento aberto para todo mundo da gráfica.
+
 ## O ✅ depende de um conserto feito no OpenWA
 
 O robô marca com ✅ cada arquivo que baixa. Em 18/09/2026 descobriu-se que essa
