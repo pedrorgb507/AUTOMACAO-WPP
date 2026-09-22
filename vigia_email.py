@@ -112,6 +112,33 @@ def quando_da_mensagem(msg):
     return quando
 
 
+def separar_ignorados(cliente, anexos):
+    """Tira os anexos que este cliente pediu para nao baixar.
+
+    Devolve (o que fica, nomes do que saiu).
+
+    E lista de IGNORAR, nao lista de aceitar, de proposito: assim um tipo novo
+    que o cliente invente continua sendo baixado. Perder arquivo de cliente
+    custa caro e so aparece quando ele cobra; baixar um a mais custa espaco.
+
+    A comparacao e pelo comeco do nome do ARQUIVO, nao pelo assunto: nos 152
+    e-mails da Viva de julho a setembro os assuntos vinham como "VERNIZ", "VER",
+    "VERNI" e 42 vezes vazios, enquanto os anexos eram sempre "GRADE ..." ou
+    "VERNIZ ..." - inclusive o "vernizz 1181.cdr", que 'verniz' pega igual.
+    """
+    marcas = [pastas.normalizar(m) for m in (cliente.get("ignorar_nomes") or []) if m]
+    if not marcas:
+        return anexos, []
+    fica, fora = [], []
+    for nome, conteudo in anexos:
+        alvo = pastas.normalizar(nome)
+        if any(alvo.startswith(m) for m in marcas):
+            fora.append(nome)
+        else:
+            fica.append((nome, conteudo))
+    return fica, fora
+
+
 def cliente_do_remetente(cfg, remetente):
     """Acha o cliente pelo endereco do remetente.
 
@@ -327,6 +354,22 @@ def uma_passada(cfg, modo_teste=False):
                         # nao registra: sem arquivo salvo, tenta de novo na
                         # proxima passada em vez de dar o e-mail por resolvido
                         continue
+
+            # Depois do Drive de proposito: assim o filtro vale tanto para anexo
+            # comum quanto para arquivo que veio por link.
+            anexos, ignorados = separar_ignorados(cliente, anexos)
+            for nome_fora in ignorados:
+                registrar("IGNORADO: '{}' ({}) - esta em 'ignorar_nomes' do config.".format(
+                    nome_fora, cliente["pasta"]))
+            if not anexos:
+                # Nada para salvar. Registra para nao reexaminar o mesmo e-mail
+                # a cada passada, mas NAO marca como lido: o e-mail tem que
+                # continuar em negrito na caixa para o usuario ver que chegou.
+                if not modo_teste:
+                    ja.add(chave)
+                    reg["baixados"].append(chave)
+                    gravar_registro(reg)
+                continue
 
             salvou_algum = False
             # Os blocos so saem depois da tentativa de marcar como lido: um
