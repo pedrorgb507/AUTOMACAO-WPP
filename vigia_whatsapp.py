@@ -646,6 +646,19 @@ def uma_passada(cfg, modo_teste=False):
                     registrar("    Arquivo: {}".format(nome))
                     registrar("    Chegou em {} e o OpenWA nunca guardou o conteudo.".format(
                         quando.strftime("%d/%m %H:%M")))
+                    # A mensagem diz o porque: 'omitted' e o OpenWA avisando que
+                    # RECUSOU guardar, quase sempre por passar do
+                    # MEDIA_DOWNLOAD_MAX_BYTES. Sem essa linha o aviso parecia
+                    # falha de rede ou limitacao do motor, e em 22/09 mandou
+                    # procurar a causa no lugar errado por um bom tempo.
+                    media_msg = (msg.get("metadata") or {}).get("media") or {}
+                    tam = media_msg.get("sizeBytes")
+                    if media_msg.get("omitted") and tam:
+                        registrar("    MOTIVO: o arquivo tem {:.0f} MB e o OpenWA"
+                                  " recusou guardar (MEDIA_DOWNLOAD_MAX_BYTES no"
+                                  " .env do OpenWA).".format(float(tam) / 1048576))
+                    elif tam:
+                        registrar("    O arquivo tem {:.0f} MB.".format(float(tam) / 1048576))
                     registrar("    BAIXE ESTE A MAO pelo WhatsApp; nao vou tentar de novo.")
                     ja.add(wid)
                     reg["baixados"].append(wid)
