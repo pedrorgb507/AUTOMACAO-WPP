@@ -9,7 +9,11 @@ Fluxo de cada arquivo:
        "775X635 - ABS 175 LPI_49862R1__.ppf"  ->  "49862R1__.ppf"
     3. sobe para o OneDrive, libera leitura para o cliente e posta como anexo
        no chat do Teams (sem liberar, o cliente cai em "Voce precisa de acesso")
-    4. move para a subpasta ENVIADOS
+    4. move para a subpasta ENVIADOS e anota a entrega em ja_enviados_cip.json
+
+Toda passada ele confere a pasta ENVIADOS: .ppf que esteja la sem o robo ter
+entregue vira aviso no log. Sem isso, arquivo movido para ENVIADOS por fora
+nunca mais e olhado - foi assim que tres chapas da Solida nao chegaram em 22/09.
 
 O envio para a Solida vai pelo navegador (teams_web.py), nao pelo Graph. O
 chat dela e de conta pessoal, e mandar por ali dispensa subir o arquivo para o
@@ -224,6 +228,7 @@ def reenviar(cfg, nomes):
             except Exception as e:
                 registrar("ERRO ao reenviar '{}': {}".format(nome, e))
                 continue
+            anotar_entrega(entrada, nome)
             registrar("REENVIADO  >>  {}  (para '{}')".format(nome, entrada["conversa"]))
             feitos += 1
     finally:
@@ -253,6 +258,125 @@ def arquivos_da_pasta(entrada):
     return saida
 
 
+REGISTRO_ENVIOS = os.path.join(AQUI, "ja_enviados_cip.json")
+
+# 'entregues' e so trilha de auditoria ("quando mandei isso?"), entao tem teto.
+# 'conhecidos' NAO pode ter teto: e ele que decide se um arquivo e estranho, e
+# cortar o mais antigo faria o robo redescobrir chapa velha como se fosse orfa.
+MAX_ENTREGAS = 800
+
+# Data da ultima vez que olhei cada pasta ENVIADOS. Fica na memoria, nao no
+# disco, de proposito: assim o robo relista ao subir, e pega o que tenham
+# movido para la enquanto ele estava fora do ar - que e justamente o caso que
+# este conserto existe para cobrir.
+ULTIMA_MARCA = {}
+
+
+def _chave(entrada, nome):
+    return "{}|{}".format(rotulo(entrada), nome)
+
+
+def ler_envios():
+    """Registro do que ESTE robo entregou. Registro ilegivel vira registro novo."""
+    try:
+        with open(REGISTRO_ENVIOS, encoding="utf-8") as f:
+            reg = json.load(f)
+    except (OSError, ValueError):
+        reg = None
+    if not isinstance(reg, dict):
+        reg = {}
+    reg.setdefault("conhecidos", [])  # tudo que ja foi contabilizado em ENVIADOS
+    reg.setdefault("entregues", {})   # chave -> quando (auditoria, com teto)
+    reg.setdefault("baseado", [])     # pastas cujo conteudo antigo ja foi aceito
+    return reg
+
+
+def gravar_envios(reg):
+    ent = reg.get("entregues") or {}
+    if len(ent) > MAX_ENTREGAS:
+        reg["entregues"] = dict(sorted(ent.items(), key=lambda kv: kv[1])[-MAX_ENTREGAS:])
+    try:
+        with open(REGISTRO_ENVIOS, "w", encoding="utf-8") as f:
+            json.dump(reg, f, indent=2, ensure_ascii=False)
+    except OSError as e:
+        # nao derruba a passada: perder o registro atrasa a conferencia, mas
+        # deixar de mandar chapa por causa disso seria trocar um problema
+        # pequeno por um grande.
+        registrar("AVISO: nao consegui gravar {} ({}).".format(
+            os.path.basename(REGISTRO_ENVIOS), e))
+
+
+def anotar_entrega(entrada, nome):
+    """Anota que o robo entregou este arquivo, para ele nao virar 'estranho'."""
+    reg = ler_envios()
+    chave = _chave(entrada, nome)
+    reg["entregues"][chave] = dt.datetime.now().isoformat(timespec="seconds")
+    if chave not in reg["conhecidos"]:
+        reg["conhecidos"].append(chave)
+    gravar_envios(reg)
+
+
+def conferir_enviados(entrada):
+    """Avisa se aparecer em ENVIADOS um arquivo que este robo nao entregou.
+
+    Arquivo em ENVIADOS e dado por resolvido e nunca mais olhado. Entao um .ppf
+    arrastado para la sem ter sido mandado some do radar em silencio, e ninguem
+    descobre ate o cliente cobrar. Foi o que aconteceu em 22/09: o vigia ficou
+    fora do ar das 09:10 as 14:24, o CTP gravou tres chapas da Solida nesse
+    buraco e alguem as moveu para ENVIADOS - nenhuma chegou, e nenhum log
+    acusou nada.
+
+    Nao mando sozinho o que acho: reenviar por conta propria duplicaria chapa no
+    chat do cliente se ela tiver sido mandada na mao. Aviso e deixo a decisao.
+    """
+    pasta = os.path.join(entrada["pasta"], entrada.get("subpasta_enviados") or "ENVIADOS")
+    try:
+        marca = os.path.getmtime(pasta)
+    except OSError:
+        return  # pasta fora do ar ou ainda sem ENVIADOS: o resto da passada avisa
+
+    # Listar ENVIADOS toda passada custa caro: e pasta de rede com milhares de
+    # arquivos, e o \servidor trava por minutos sem aviso. A data da pasta muda
+    # sempre que alguem poe algo nela - que e exatamente o sinal que interessa.
+    chave_pasta = rotulo(entrada)
+    if ULTIMA_MARCA.get(chave_pasta) == marca:
+        return
+
+    aceitas = [e.lower() for e in (entrada.get("extensoes_aceitas") or [])]
+    try:
+        nomes = [n for n in sorted(os.listdir(pasta))
+                 if os.path.isfile(os.path.join(pasta, n))
+                 and not (aceitas and os.path.splitext(n)[1].lower() not in aceitas)]
+    except OSError:
+        return
+
+    reg = ler_envios()
+    conhecidos = set(reg["conhecidos"])
+    estranhos = [n for n in nomes if _chave(entrada, n) not in conhecidos]
+
+    if chave_pasta not in reg["baseado"]:
+        # Primeira vez nesta pasta: o que ja estava la e de antes do registro
+        # existir, e nao da para saber se foi entregue. Acusar tudo seria um
+        # alarme de milhares de linhas que ninguem le - e alarme que ninguem le
+        # e pior que alarme nenhum.
+        reg["baseado"].append(chave_pasta)
+        registrar("Registro de entregas criado para '{}': tomei os {} arquivo(s) que ja"
+                  " estavam em ENVIADOS como conhecidos. Daqui para frente, .ppf que"
+                  " aparecer la sem eu ter mandado vira aviso.".format(
+                      chave_pasta, len(estranhos)))
+    else:
+        for n in estranhos:
+            registrar("ATENCAO: '{}' esta em ENVIADOS mas eu nunca mandei ({})."
+                      " Se o cliente nao recebeu, mova de volta para {} que eu mando"
+                      " na proxima passada.".format(n, chave_pasta, entrada["pasta"]))
+
+    # Contabilizados (avisados ou aceitos no baseline), para nao repetir o
+    # alarme a cada passada.
+    reg["conhecidos"].extend(_chave(entrada, n) for n in estranhos)
+    gravar_envios(reg)
+    ULTIMA_MARCA[chave_pasta] = marca
+
+
 ULTIMO_ESTADO = {}
 
 
@@ -274,6 +398,8 @@ def processar_pasta(cfg, entrada, sessao, modo_teste):
         avisar_estado(nome_pasta, "PAUSADO: '{}' nao esta enviando (ativo=false no config_cip.json).".format(
             nome_pasta))
         return 0
+
+    conferir_enviados(entrada)
 
     arquivos = arquivos_da_pasta(entrada)
     if arquivos is None:
@@ -324,6 +450,8 @@ def processar_pasta(cfg, entrada, sessao, modo_teste):
             registrar("ATENCAO: '{}' foi enviado mas NAO saiu da pasta ({}). "
                       "Mova na mao para nao mandar duas vezes.".format(novo_nome, e))
             continue
+
+        anotar_entrega(entrada, novo_nome)
 
         # So chega aqui depois do envio confirmado E do arquivo sair da fila:
         # o bloco diz ENVIADO porque as duas coisas ja aconteceram.

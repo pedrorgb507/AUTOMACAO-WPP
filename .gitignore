@@ -17,6 +17,7 @@ token_cip.bin
 vigia_cip.log
 vigia_email.log
 ja_baixados_email.json
+ja_enviados_cip.json
 pendencias_os.json
 
 # Sessao logada do robo do Teams: contem cookies de login
