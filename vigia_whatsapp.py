@@ -86,6 +86,24 @@ class ErroApi(Exception):
         self.status = status
 
 
+class SessaoIndisponivel(Exception):
+    """A sessao do WhatsApp nao respondeu - diferente de 'nao achei o que pedi'.
+
+    Existe para o robo parar de acusar o inocente. Quando a listagem de grupos
+    falhava, o log dizia "grupo 'X' nao encontrado", e o grupo estava la: quem
+    nao estava era a conexao. Mensagem assim manda procurar no lugar errado.
+    """
+
+
+# O baileys cai e volta sozinho (statusCode=408 no log do OpenWA), e enquanto
+# ele se reconecta a API devolve 409 ou 500, ou simplesmente nao responde.
+# Medido em 25/09: cinco leituras seguidas deram 2 timeouts, 1 'ready' em 37s e
+# 2 'initializing' - e logo depois a mesma chamada passou em 0,32s.
+ERROS_PASSAGEIROS = (408, 409, 425, 429, 500, 502, 503, 504)
+TENTATIVAS_LEITURA = 3
+ESPERA_ENTRE_TENTATIVAS = 4.0
+
+
 # A API do OpenWA corta em 10 chamadas por segundo (HTTP 429). Cada cliente da
 # lista soma uma chamada na rajada de cada passada, entao um respiro minimo
 # entre chamadas mantem a folga por mais clientes que entrem no config.
@@ -101,7 +119,6 @@ def respirar():
 
 
 def chamar(cfg, chave, caminho, params=None, binario=False, timeout=60, metodo="GET", corpo=None):
-    respirar()
     url = cfg.get("openwa_url", "http://localhost:2785").rstrip("/") + caminho
     if params:
         url += "?" + urllib.parse.urlencode(params)
@@ -111,12 +128,27 @@ def chamar(cfg, chave, caminho, params=None, binario=False, timeout=60, metodo="
         dados_envio = json.dumps(corpo).encode("utf-8")
         cabecalhos["Content-Type"] = "application/json"
     req = urllib.request.Request(url, data=dados_envio, headers=cabecalhos, method=metodo)
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            dados = resp.read()
-    except urllib.error.HTTPError as e:
-        corpo_erro = e.read().decode("utf-8", "replace") if e.fp else ""
-        raise ErroApi(e.code, corpo_erro)
+    # SO o GET e repetido. Repetir um POST mandaria a mesma mensagem ou o mesmo
+    # arquivo duas vezes para o cliente - um erro pior que o que se quer evitar.
+    tentativas = TENTATIVAS_LEITURA if metodo == "GET" else 1
+    for n in range(1, tentativas + 1):
+        respirar()
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                dados = resp.read()
+            break
+        except urllib.error.HTTPError as e:
+            corpo_erro = e.read().decode("utf-8", "replace") if e.fp else ""
+            if n < tentativas and e.code in ERROS_PASSAGEIROS:
+                time.sleep(ESPERA_ENTRE_TENTATIVAS * n)
+                continue
+            raise ErroApi(e.code, corpo_erro)
+        except OSError:
+            # inclui timeout e recusa de conexao (URLError herda de OSError)
+            if n < tentativas:
+                time.sleep(ESPERA_ENTRE_TENTATIVAS * n)
+                continue
+            raise
     if binario:
         return dados
     # alguns POSTs respondem 200 com corpo vazio; json.loads morreria neles
@@ -280,8 +312,12 @@ def chat_id_do_grupo(cfg, chave, sessao_id, nome):
         grupos = chamar(cfg, chave, "/api/sessions/{}/groups".format(
             urllib.parse.quote(sessao_id, safe="")))
     except (ErroApi, OSError, ValueError) as e:
-        registrar("ERRO ao listar os grupos do WhatsApp: {}".format(e))
-        return None
+        # Nao devolve None: quem chama entenderia "esse grupo nao existe", e o
+        # que aconteceu foi que a sessao nao respondeu. Sao coisas diferentes e
+        # levam a lugares diferentes.
+        raise SessaoIndisponivel(
+            "nao consegui listar os grupos ({}) - a sessao do WhatsApp"
+            " provavelmente estava reconectando".format(e))
     if isinstance(grupos, dict):
         grupos = grupos.get("groups") or grupos.get("data") or []
     alvo = normalizar(nome)
@@ -302,7 +338,13 @@ def mensagens_do_cliente(cfg, chave, sessao_id, cliente):
     """Ultimas mensagens recebidas do cliente (do banco do OpenWA)."""
     grupo = (cliente.get("grupo") or "").strip()
     if grupo:
-        chat_id = chat_id_do_grupo(cfg, chave, sessao_id, grupo)
+        try:
+            chat_id = chat_id_do_grupo(cfg, chave, sessao_id, grupo)
+        except SessaoIndisponivel as e:
+            # Sessao fora do ar nao derruba a passada: os outros clientes ainda
+            # podem ser lidos, e este volta na proxima.
+            registrar("AVISO: {} (cliente '{}').".format(e, cliente.get("nome") or grupo))
+            return []
         return [] if not chat_id else mensagens_do_chat(cfg, chave, sessao_id, [chat_id])
     # As duas variantes do numero (com e sem o nono digito) quase sempre levam
     # ao MESMO chat, e o @c.us so serve quando a traducao falhou. Consultar tudo

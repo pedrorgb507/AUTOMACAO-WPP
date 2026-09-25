@@ -78,9 +78,16 @@ def _conectar(cfg_wa, registrar):
 def _mensagens_do_grupo(cfg_wa, chave, sessao_id, nome_grupo, registrar):
     gid = _CACHE.get("grupo")
     if not gid:
-        gid = wa.chat_id_do_grupo(cfg_wa, chave, sessao_id, nome_grupo)
+        try:
+            gid = wa.chat_id_do_grupo(cfg_wa, chave, sessao_id, nome_grupo)
+        except wa.SessaoIndisponivel as e:
+            # Antes isso virava "grupo nao encontrado", e o grupo estava la.
+            # A OS fica pendente e e tentada de novo na proxima passada.
+            registrar("AVISO: {}; deixo a OS pendente.".format(e))
+            return None, None
         if not gid:
-            registrar("AVISO: grupo '{}' nao encontrado no WhatsApp.".format(nome_grupo))
+            registrar("AVISO: grupo '{}' nao existe na lista que o WhatsApp me mostra."
+                      " Confira o nome no config.".format(nome_grupo))
             return None, None
         _CACHE["grupo"] = gid
     return gid, wa.mensagens_do_chat(cfg_wa, chave, sessao_id, [gid])
