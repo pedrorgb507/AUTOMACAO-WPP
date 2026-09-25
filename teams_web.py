@@ -57,12 +57,36 @@ def registrar(msg):
 
 
 def abrir(p, visivel):
-    """Abre o Chrome com o perfil do robo. O perfil guarda o login entre execucoes."""
+    """Abre o navegador com o perfil do robo. O perfil guarda o login entre execucoes.
+
+    Usa o Chromium que vem com o Playwright, NAO o Chrome do sistema. O motivo e
+    que o Chrome se atualiza sozinho e passa na frente do Playwright: em
+    24/09/2026 as 18:01 ele foi para a versao 154, enquanto o Playwright 1.63
+    (a ultima que existe) fala com a 153. No dia seguinte o robo passou a falhar
+    de tres jeitos diferentes no MESMO arquivo - o clique no anexo nao abria a
+    aba, o download comecava e o navegador morria no meio, e o contexto fechava
+    sozinho. Nenhum deles parecia problema de versao.
+
+    O Chromium do Playwright nao se atualiza sozinho, entao uma atualizacao do
+    Chrome nao derruba mais o robo. Ele vem pelo INSTALAR-BIBLIOTECAS.bat.
+
+    'locale' fixo em pt-BR porque o Chromium do Playwright pede paginas em
+    ingles por padrao, e a pagina do OneDrive obedece.
+    """
     os.makedirs(PERFIL, exist_ok=True)
-    return p.chromium.launch_persistent_context(
-        PERFIL, channel="chrome", headless=not visivel,
-        args=["--no-first-run", "--no-default-browser-check"],
-        accept_downloads=True, viewport={"width": 1400, "height": 950})
+    comum = dict(headless=not visivel, locale="pt-BR",
+                 args=["--no-first-run", "--no-default-browser-check"],
+                 accept_downloads=True, viewport={"width": 1400, "height": 950})
+    try:
+        return p.chromium.launch_persistent_context(PERFIL, **comum)
+    except Exception as e:
+        # Sem o Chromium baixado, e melhor subir no Chrome do sistema (instavel,
+        # mas funciona as vezes) do que nao subir - so que dizendo alto o porque.
+        registrar("AVISO: nao subi com o Chromium do Playwright ({}).".format(
+            str(e).splitlines()[0][:90]))
+        registrar("       Caindo para o Chrome do sistema, que pode falhar ao baixar.")
+        registrar("       Para resolver: rode INSTALAR-BIBLIOTECAS.bat.")
+        return p.chromium.launch_persistent_context(PERFIL, channel="chrome", **comum)
 
 
 # Textos que so aparecem na pagina de propaganda do Teams (antes do login).
@@ -288,7 +312,11 @@ SEL_CONVERSA = '[role="treeitem"]'
 SEL_MENSAGEM = '[data-tid="chat-pane-message"]'
 SEL_ANEXO = '[data-tid^="file-chiclet-"]'
 SEL_REAGIR = '[data-tid="add-reaction-picker-entry-point-button"]'
-SEL_BAIXAR_ONEDRIVE = '[aria-label^="Baixar esse arquivo"]'
+# O botao de baixar do OneDrive e casado pelo data-automation-id, que NAO muda
+# com o idioma. O seletor antigo procurava o aria-label "Baixar esse arquivo" e
+# quebrou em 25/09 quando a pagina veio em ingles ("Download this file to your
+# device"): o botao estava la, visivel, e o robo dizia nao ter achado.
+SEL_BAIXAR_ONEDRIVE = '[data-automation-id="downloadCommand"]'
 SEL_TITULO = '[data-tid="chat-title"]'
 # A barra de envio troca de prefixo conforme o estado da caixa: com anexo
 # pendurado ela vira "newMessageCommands-", sem anexo e "sendMessageCommands-".
